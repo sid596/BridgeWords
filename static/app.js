@@ -1,6 +1,6 @@
-// BRIDGEWORDS frontend.
-// Step 1: board, tabs, chips, language picker.
-// Step 2: speech via /api/speak, Speak buttons, urgent tiles with pre-cached audio.
+// BRIDGEWORDS frontend (vanilla JS, no build step).
+// Board + chips, speech via /api/speak, suggestions via /api/suggest,
+// listening via mic + voice-activity detection + /api/listen, phone mode.
 "use strict";
 
 const state = {
@@ -10,11 +10,15 @@ const state = {
   tiles: [],
   byId: {},
   activeCat: null,
-  selected: [],          // tile ids, in tap order
+  selected: [],          // tile ids, or "txt:<label>" for quick replies that aren't tiles
   mode: "listen",
-  quickReplies: ["yes", "no", "later"], // replaced by /api/suggest in step 4
-  speaking: false,       // true while our own voice plays (+300 ms): the mic must ignore this
+  history: [],           // last partner lines, oldest first
+  quickReplies: ["yes", "no", "later"],
+  speaking: false,       // true while our own voice plays (+300 ms): the mic ignores this
 };
+
+const MAX_HISTORY = 6;
+const TXT = "txt:";
 
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -28,8 +32,15 @@ function el(tag, className, children = []) {
   return node;
 }
 
-function tileFace(tile, wrapperClass) {
-  return [el("span", "emoji", tile.emoji), el("span", wrapperClass || "label", tile.label)];
+function button(className, children, onClick) {
+  const b = el("button", className, children);
+  b.type = "button";
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+function tileFace(tile) {
+  return [el("span", "emoji", tile.emoji), el("span", "label", tile.label)];
 }
 
 let toastTimer;
@@ -41,17 +52,56 @@ function toast(msg, ms = 2600) {
   toastTimer = setTimeout(() => (t.hidden = true), ms);
 }
 
-function setStatus(text) {
-  $("status").textContent = text;
+// Status pill: listening / hearing / thinking / speaking / ready / mic off.
+let busy = 0;
+function refreshStatus() {
+  let s = mic.on ? "listening" : "ready";
+  if (mic.on && mic.recording) s = "hearing";
+  if (busy > 0) s = "thinking";
+  if (state.speaking) s = "speaking";
+  $("status").textContent = s;
+  $("status").dataset.state = s;
+}
+
+async function thinking(fn) {
+  busy++;
+  refreshStatus();
+  try {
+    return await fn();
+  } finally {
+    busy--;
+    refreshStatus();
+  }
 }
 
 function langCode(lang) {
   return state.languages.find((l) => l.id === lang)?.code || "en-IN";
 }
 
-// ---------- Audio ----------
-// One shared <audio> element. iOS only lets an element play after a user gesture,
-// so we "unlock" it on the first touch and reuse it for every later playback.
+async function postJSON(url, body) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await errorText(res));
+  return res.json();
+}
+
+async function errorText(res) {
+  try {
+    const d = (await res.json()).detail;
+    return typeof d === "string" ? d : `Request failed (${res.status})`;
+  } catch {
+    return `Request failed (${res.status})`;
+  }
+}
+
+// ======================================================================
+// Speech out
+// One shared <audio> element. iOS only lets an element play after a user
+// gesture, so it is "unlocked" on the first touch and reused afterwards.
+// ======================================================================
 
 const player = new Audio();
 player.preload = "auto";
@@ -79,13 +129,7 @@ function fetchSpeech(text, lang) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, lang }),
       });
-      if (!res.ok) {
-        let msg = `Speech failed (${res.status})`;
-        try {
-          msg = (await res.json()).detail || msg;
-        } catch {}
-        throw new Error(msg);
-      }
+      if (!res.ok) throw new Error(await errorText(res));
       const blob = await res.blob();
       console.log(
         `[speak] ${res.headers.get("X-Cache") || "?"} ${Math.round(performance.now() - t0)} ms`,
@@ -113,6 +157,13 @@ function playUrl(url) {
   });
 }
 
+function setSpeaking(on) {
+  state.speaking = on;
+  document.body.classList.toggle("is-speaking", on);
+  if (on) mic.abortSegment(); // half-duplex: never record our own voice
+  refreshStatus();
+}
+
 function stopSpeaking() {
   const token = ++speakToken;
   player.pause();
@@ -121,14 +172,6 @@ function stopSpeaking() {
   finishPlayback = null;
   // Keep the 300 ms half-duplex margin, unless a new phrase has started meanwhile.
   if (state.speaking) sleep(300).then(() => token === speakToken && setSpeaking(false));
-}
-
-function setSpeaking(on) {
-  state.speaking = on;
-  document.body.classList.toggle("is-speaking", on);
-  setStatus(on ? "speaking" : "ready");
-  // Step 4 hooks the mic here (half-duplex): pause while speaking, resume after.
-  document.dispatchEvent(new CustomEvent("speaking", { detail: on }));
 }
 
 // Plays text through Timbre. Resolves after playback ends plus 300 ms (half-duplex margin).
@@ -146,7 +189,7 @@ async function speak(text, lang = state.lang) {
   }
 }
 
-// Device voice, used only when Timbre is unavailable for an urgent tile.
+// Device voice: used only when Timbre is unavailable for a fixed phrase.
 function speakWithDevice(text, lang) {
   return new Promise((resolve) => {
     if (!window.speechSynthesis) return resolve(false);
@@ -159,35 +202,14 @@ function speakWithDevice(text, lang) {
   });
 }
 
-// ---------- Urgent tiles ----------
-
-async function prefetchUrgent() {
-  const lang = state.lang;
-  const urgent = state.tiles.filter((t) => t.urgent);
-  const box = $("urgent-state");
-  box.textContent = "loading voice…";
-  const results = await Promise.allSettled(urgent.map((t) => fetchSpeech(t.say || t.label, lang)));
-  if (lang !== state.lang) return; // language changed meanwhile
-  const failed = results.find((r) => r.status === "rejected");
-  if (failed) {
-    console.warn("[urgent] voice not cached:", failed.reason.message);
-    box.textContent = "⚠ device voice";
-    box.title = failed.reason.message;
-  } else {
-    box.textContent = "🔊 voice ready";
-    box.title = "";
-  }
-}
-
-async function onUrgent(tile) {
+// Fixed phrases (urgent tiles, Wait): one tap speaks a known phrase, no AI step.
+async function speakFixed(tile) {
   const text = tile.say || tile.label;
   const lang = state.lang;
-  console.log("[urgent]", tile.id, JSON.stringify(text));
-  showUrgentOverlay(tile, text);
   try {
     await speak(text, lang);
   } catch (err) {
-    console.warn("[urgent] Timbre failed, using device voice:", err.message);
+    console.warn(`[speak] Timbre failed for ${tile.id}, using device voice:`, err.message);
     setSpeaking(true);
     await speakWithDevice(text, lang);
     await sleep(300);
@@ -195,18 +217,40 @@ async function onUrgent(tile) {
   }
 }
 
-function showUrgentOverlay(tile, text) {
-  $("urgent-overlay-emoji").textContent = tile.emoji;
-  $("urgent-overlay-text").textContent = text;
-  $("urgent-overlay").hidden = false;
+async function prefetchFixed() {
+  const lang = state.lang;
+  const fixed = state.tiles.filter((t) => t.say);
+  const box = $("urgent-state");
+  box.textContent = "loading voice…";
+  const results = await Promise.allSettled(fixed.map((t) => fetchSpeech(t.say, lang)));
+  if (lang !== state.lang) return; // language changed meanwhile
+  const failed = results.find((r) => r.status === "rejected");
+  box.textContent = failed ? "⚠ device voice" : "🔊 voice ready";
+  box.title = failed ? failed.reason.message : "";
+  if (failed) console.warn("[urgent] voice not cached:", failed.reason.message);
 }
 
-// ---------- Data ----------
+function onUrgent(tile) {
+  console.log("[urgent]", tile.id);
+  $("urgent-overlay-emoji").textContent = tile.emoji;
+  $("urgent-overlay-text").textContent = tile.say || tile.label;
+  $("urgent-overlay").hidden = false;
+  speakFixed(tile);
+}
+
+function onWait() {
+  const tile = state.byId.wait;
+  if (tile) speakFixed(tile);
+}
+
+// ======================================================================
+// Board data + selection
+// ======================================================================
 
 async function loadSymbols(lang) {
   const url = lang ? `/api/symbols?lang=${encodeURIComponent(lang)}` : "/api/symbols";
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`/api/symbols failed: ${res.status}`);
+  if (!res.ok) throw new Error(await errorText(res));
   const data = await res.json();
 
   state.lang = data.lang;
@@ -218,21 +262,23 @@ async function loadSymbols(lang) {
   document.documentElement.lang = data.lang === "hinglish" ? "hi-Latn" : data.lang;
 
   renderAll();
-  prefetchUrgent();
+  prefetchFixed();
 }
 
-// ---------- Selection ----------
+function chipInfo(key) {
+  if (key.startsWith(TXT)) return { emoji: "💬", label: key.slice(TXT.length) };
+  return state.byId[key];
+}
 
-function toggleTile(id) {
-  const i = state.selected.indexOf(id);
-  if (i === -1) state.selected.push(id);
+function toggleSelected(key) {
+  const i = state.selected.indexOf(key);
+  if (i === -1) state.selected.push(key);
   else state.selected.splice(i, 1);
-  renderGrid();
-  renderChips();
+  selectionChanged();
 }
 
-function removeChip(id) {
-  state.selected = state.selected.filter((x) => x !== id);
+function selectionChanged() {
+  $("results").replaceChildren(); // suggestions no longer match the chips
   renderGrid();
   renderChips();
 }
@@ -240,32 +286,74 @@ function removeChip(id) {
 function clearMessage() {
   state.selected = [];
   $("typed").value = "";
-  $("results").replaceChildren();
-  renderGrid();
-  renderChips();
+  selectionChanged();
 }
 
 function typedText() {
   return $("typed").value.trim();
 }
 
-// Plain sentence from the chosen tiles + typed text. This is also the fallback
-// when the LLM fails (step 3), so the user can always speak.
-function plainSentence() {
-  const words = state.selected.map((id) => state.byId[id]?.label).filter(Boolean);
-  const typed = typedText();
-  if (typed) words.push(typed);
-  return words.join(", ");
+function selectionPayload() {
+  const tiles = state.selected.filter((k) => !k.startsWith(TXT));
+  const extra = state.selected.filter((k) => k.startsWith(TXT)).map((k) => k.slice(TXT.length));
+  const typed = [...extra, typedText()].filter(Boolean).join(", ");
+  return { tiles, typed };
 }
 
-function onSuggest() {
-  const text = plainSentence();
-  if (!text) return;
-  // Step 3 replaces this with /api/suggest (up to 3 sentences or a clarifying question).
-  renderSentences([text]);
+// ======================================================================
+// Suggestions
+// ======================================================================
+
+let suggestToken = 0;
+
+async function onSuggest(clarification = null) {
+  const { tiles, typed } = selectionPayload();
+  if (!tiles.length && !typed) return;
+  const token = ++suggestToken;
+  const t0 = performance.now();
+  try {
+    const data = await thinking(() =>
+      postJSON("/api/suggest", {
+        history: state.history,
+        tiles,
+        typed,
+        lang: state.lang,
+        clarification,
+      })
+    );
+    if (token !== suggestToken) return; // a newer request superseded this one
+    console.log(
+      `[suggest] ${Math.round(performance.now() - t0)} ms (llm ${data.ms} ms)` +
+        (data.fallback ? " FALLBACK" : "")
+    );
+    if (data.clarify) renderClarify(data.clarify);
+    else renderSentences(data.sentences, data.fallback);
+  } catch (err) {
+    console.warn("[suggest] failed:", err.message);
+    toast(err.message, 4000);
+  }
 }
 
-// ---------- Rendering ----------
+// After the partner speaks: replies that answer them (no tiles).
+// Separate token, so a partner line never cancels the user's own pending Suggest.
+let replyToken = 0;
+
+async function suggestReplies() {
+  const token = ++replyToken;
+  const data = await thinking(() =>
+    postJSON("/api/suggest", { history: state.history, tiles: [], typed: "", lang: state.lang })
+  );
+  if (token !== replyToken) return data;
+  if (data.quick_replies.length) {
+    state.quickReplies = data.quick_replies;
+    renderReplies(true);
+  }
+  return data;
+}
+
+// ======================================================================
+// Rendering
+// ======================================================================
 
 function renderAll() {
   renderLangPicker();
@@ -277,8 +365,7 @@ function renderAll() {
 }
 
 function renderLangPicker() {
-  const sel = $("lang-picker");
-  sel.replaceChildren(
+  $("lang-picker").replaceChildren(
     ...state.languages.map((l) => {
       const o = el("option", null, l.name);
       o.value = l.id;
@@ -288,44 +375,50 @@ function renderLangPicker() {
   );
 }
 
-function renderReplies() {
-  const row = $("reply-row");
-  const buttons = state.quickReplies
-    .map((id) => state.byId[id])
-    .filter(Boolean)
-    .map((tile) => {
-      const b = el("button", "reply", tileFace(tile));
-      b.type = "button";
-      b.addEventListener("click", () => toggleTile(tile.id));
-      return b;
-    });
+// Hard rule 6: every suggestion row also offers "Something else" and "Wait".
+function escapeButtons(onSomethingElse) {
+  const out = [];
+  const se = state.byId.something_else;
+  const wait = state.byId.wait;
+  if (se) out.push(button("reply escape", tileFace(se), onSomethingElse));
+  if (wait) out.push(button("reply escape", tileFace(wait), onWait));
+  return out;
+}
 
-  // Hard rule 6: every row also offers "Something else" and "Wait".
-  for (const id of ["something_else", "wait"]) {
-    const tile = state.byId[id];
-    if (!tile) continue;
-    const b = el("button", "reply escape", tileFace(tile));
-    b.type = "button";
-    b.addEventListener("click", () =>
-      id === "something_else" ? $("tabs").scrollIntoView({ behavior: "smooth" }) : toggleTile(id)
-    );
-    buttons.push(b);
+function focusBoard() {
+  $("tabs").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderReplies(fresh = false) {
+  const buttons = state.quickReplies.map((key) => {
+    const tile = state.byId[key];
+    const chipKey = tile ? key : TXT + key;
+    const face = tile ? tileFace(tile) : [el("span", "emoji", "💬"), el("span", "label", key)];
+    const selected = state.selected.includes(chipKey);
+    return button("reply" + (selected ? " selected" : ""), face, () => {
+      toggleSelected(chipKey);
+      renderReplies();
+    });
+  });
+  const row = $("reply-row");
+  row.replaceChildren(...buttons, ...escapeButtons(focusBoard));
+  if (fresh) {
+    row.classList.remove("flash");
+    void row.offsetWidth; // restart the animation
+    row.classList.add("flash");
   }
-  row.replaceChildren(...buttons);
 }
 
 function renderTabs() {
   $("tabs").replaceChildren(
     ...state.categories.map((cat) => {
-      const b = el("button", "tab", cat);
-      b.type = "button";
-      b.setAttribute("role", "tab");
-      b.setAttribute("aria-selected", String(cat === state.activeCat));
-      b.addEventListener("click", () => {
+      const b = button("tab", cat, () => {
         state.activeCat = cat;
         renderTabs();
         renderGrid();
       });
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", String(cat === state.activeCat));
       return b;
     })
   );
@@ -336,11 +429,12 @@ function renderGrid() {
   $("grid").replaceChildren(
     ...tiles.map((tile) => {
       const selected = state.selected.includes(tile.id);
-      const b = el("button", "tile" + (selected ? " selected" : ""), tileFace(tile));
-      b.type = "button";
+      const b = button("tile" + (selected ? " selected" : ""), tileFace(tile), () => {
+        toggleSelected(tile.id);
+        renderReplies();
+      });
       b.setAttribute("aria-pressed", String(selected));
       b.title = tile.label_en;
-      b.addEventListener("click", () => toggleTile(tile.id));
       return b;
     })
   );
@@ -350,12 +444,7 @@ function renderUrgent() {
   $("urgent-tiles").replaceChildren(
     ...state.tiles
       .filter((t) => t.urgent)
-      .map((tile) => {
-        const b = el("button", "urgent-tile", tileFace(tile));
-        b.type = "button";
-        b.addEventListener("click", () => onUrgent(tile));
-        return b;
-      })
+      .map((tile) => button("urgent-tile", tileFace(tile), () => onUrgent(tile)))
   );
 }
 
@@ -367,20 +456,19 @@ function renderChips() {
     return;
   }
   box.replaceChildren(
-    ...state.selected
-      .map((id) => state.byId[id])
-      .filter(Boolean)
-      .map((tile) => {
-        const b = el("button", "chip", [
-          el("span", "emoji", tile.emoji),
-          el("span", null, tile.label),
-          el("span", "x", "✕"),
-        ]);
-        b.type = "button";
-        b.setAttribute("aria-label", `Remove ${tile.label}`);
-        b.addEventListener("click", () => removeChip(tile.id));
-        return b;
-      })
+    ...state.selected.map((key) => {
+      const info = chipInfo(key) || { emoji: "", label: key };
+      const b = button(
+        "chip",
+        [el("span", "emoji", info.emoji), el("span", null, info.label), el("span", "x", "✕")],
+        () => {
+          toggleSelected(key);
+          renderReplies();
+        }
+      );
+      b.setAttribute("aria-label", `Remove ${info.label}`);
+      return b;
+    })
   );
 }
 
@@ -388,20 +476,37 @@ function updateSuggestButton() {
   $("suggest-btn").disabled = state.selected.length === 0 && !typedText();
 }
 
-// Sentence cards: text + a Speak button. Nothing is spoken until Speak is tapped (hard rule 1).
-function renderSentences(sentences) {
+function somethingElseFromResults() {
+  $("results").replaceChildren();
+  focusBoard();
+}
+
+// Sentence cards: text + Speak. Nothing is spoken until Speak is tapped (hard rule 1).
+function renderSentences(sentences, isFallback) {
   const lang = state.lang;
+  const cards = sentences.map((text) => {
+    const speakBtn = el("button", "btn btn-speak", "🔊 Speak");
+    speakBtn.type = "button";
+    speakBtn.addEventListener("click", () => onSpeakCard(speakBtn, text, lang));
+    return el("div", "card", [el("p", "card-text", text), speakBtn]);
+  });
+  const children = [];
+  if (isFallback) children.push(el("p", "note", "AI suggestions unavailable: your words as tapped."));
+  children.push(el("div", "cards", cards));
+  children.push(el("div", "row-escape", escapeButtons(somethingElseFromResults)));
+  $("results").replaceChildren(...children);
+}
+
+// Clarifying question: big option buttons; the answer goes back to /api/suggest.
+function renderClarify({ question, options }) {
+  const opts = options.map((opt) =>
+    button("btn btn-option", opt, () => onSuggest({ question, answer: opt }))
+  );
   $("results").replaceChildren(
-    el(
-      "div",
-      "cards",
-      sentences.map((text) => {
-        const speakBtn = el("button", "btn btn-speak", "🔊 Speak");
-        speakBtn.type = "button";
-        speakBtn.addEventListener("click", () => onSpeakCard(speakBtn, text, lang));
-        return el("div", "card", [el("p", "card-text", text), speakBtn]);
-      })
-    )
+    el("div", "clarify", [
+      el("p", "clarify-q", ["❓ ", question]),
+      el("div", "clarify-options", [...opts, ...escapeButtons(somethingElseFromResults)]),
+    ])
   );
 }
 
@@ -427,30 +532,285 @@ async function onSpeakCard(btn, text, lang) {
   }
 }
 
-// ---------- Wiring ----------
+// ======================================================================
+// Listening: mic -> voice-activity detection -> WAV -> /api/listen -> /api/suggest
+// Prisma doesn't accept WebM, so we capture raw PCM and encode 16 kHz WAV ourselves.
+// ======================================================================
+
+const VAD = {
+  listen: { minRms: 0.012, factor: 3.0 },
+  phone: { minRms: 0.008, factor: 2.5 }, // speakerphone audio is quieter
+  startMs: 90,       // this much loud audio starts a segment
+  silenceMs: 1200,   // this much quiet ends it
+  maxMs: 25000,      // hard cap (Prisma takes up to 30 s)
+  preRollMs: 300,    // keep audio from just before the start
+  minVoicedMs: 350,  // shorter segments are noise (a cough, a door)
+  targetRate: 16000,
+};
+
+const WORKLET_SRC = `
+class Tap extends AudioWorkletProcessor {
+  constructor() { super(); this.buf = new Float32Array(1024); this.n = 0; }
+  process(inputs) {
+    const ch = inputs[0] && inputs[0][0];
+    if (ch) for (let i = 0; i < ch.length; i++) {
+      this.buf[this.n++] = ch[i];
+      if (this.n === this.buf.length) { this.port.postMessage(this.buf.slice(0)); this.n = 0; }
+    }
+    return true;
+  }
+}
+registerProcessor("tap", Tap);`;
+
+const mic = {
+  on: false,
+  recording: false,
+  ctx: null,
+  stream: null,
+  node: null,
+  rate: 48000,
+  floor: 0.005,
+  loudMs: 0,
+  preRoll: [],
+  chunks: [],
+  voicedMs: 0,
+  quietMs: 0,
+  segMs: 0,
+  queue: Promise.resolve(),
+
+  async start() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast("This browser can't use the mic here. Use https or localhost.", 5000);
+      return;
+    }
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+    } catch (err) {
+      toast(`Microphone blocked: ${err.message}`, 5000);
+      return;
+    }
+    this.ctx = new AudioContext();
+    this.rate = this.ctx.sampleRate;
+    const url = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "text/javascript" }));
+    await this.ctx.audioWorklet.addModule(url);
+    URL.revokeObjectURL(url);
+    const src = this.ctx.createMediaStreamSource(this.stream);
+    this.node = new AudioWorkletNode(this.ctx, "tap");
+    this.node.port.onmessage = (e) => this.onFrame(e.data);
+    src.connect(this.node);
+    this.node.connect(this.ctx.destination); // outputs silence; keeps the node running
+    this.on = true;
+    this.reset();
+    renderMicButton();
+    refreshStatus();
+    console.log(`[listen] mic on, ${this.rate} Hz, mode=${state.mode}`);
+  },
+
+  stop() {
+    this.on = false;
+    this.reset();
+    this.node?.disconnect();
+    this.stream?.getTracks().forEach((t) => t.stop());
+    this.ctx?.close();
+    this.ctx = this.stream = this.node = null;
+    renderMicButton();
+    refreshStatus();
+    console.log("[listen] mic off");
+  },
+
+  reset() {
+    this.recording = false;
+    this.loudMs = this.voicedMs = this.quietMs = this.segMs = 0;
+    this.preRoll = [];
+    this.chunks = [];
+  },
+
+  abortSegment() {
+    if (this.recording) console.log("[listen] segment dropped: we started speaking");
+    this.reset();
+    refreshStatus();
+  },
+
+  onFrame(frame) {
+    if (!this.on) return;
+    if (state.speaking) return; // half-duplex: ignore everything while we talk (+300 ms)
+
+    let sum = 0;
+    for (let i = 0; i < frame.length; i++) sum += frame[i] * frame[i];
+    const rms = Math.sqrt(sum / frame.length);
+    const ms = (frame.length / this.rate) * 1000;
+    const cfg = VAD[state.mode] || VAD.listen;
+    const threshold = Math.max(cfg.minRms, this.floor * cfg.factor);
+
+    if (!this.recording) {
+      this.preRoll.push(frame);
+      while (this.preRoll.length * ms > VAD.preRollMs) this.preRoll.shift();
+      if (rms > threshold) {
+        this.loudMs += ms;
+        if (this.loudMs >= VAD.startMs) {
+          this.recording = true;
+          this.chunks = [...this.preRoll];
+          this.preRoll = [];
+          this.segMs = this.chunks.length * ms;
+          this.voicedMs = this.loudMs;
+          this.quietMs = 0;
+          refreshStatus();
+        }
+      } else {
+        this.loudMs = 0;
+        this.floor = this.floor * 0.95 + rms * 0.05; // track background noise
+      }
+      return;
+    }
+
+    this.chunks.push(frame);
+    this.segMs += ms;
+    if (rms > threshold * 0.6) {
+      this.voicedMs += ms;
+      this.quietMs = 0;
+    } else {
+      this.quietMs += ms;
+    }
+    if (this.quietMs >= VAD.silenceMs || this.segMs >= VAD.maxMs) this.finishSegment();
+  },
+
+  finishSegment() {
+    const chunks = this.chunks;
+    const voiced = this.voicedMs;
+    const total = this.segMs;
+    const rate = this.rate;
+    this.reset();
+    refreshStatus();
+    if (voiced < VAD.minVoicedMs) {
+      console.log(`[listen] ignored ${Math.round(voiced)} ms blip`);
+      return;
+    }
+    const endedAt = performance.now();
+    const wav = encodeWav(chunks, rate, VAD.targetRate);
+    console.log(`[listen] segment ${Math.round(total)} ms (${Math.round(voiced)} ms voiced)`);
+    // Process segments one at a time, in order.
+    this.queue = this.queue.then(() => handleSegment(wav, endedAt)).catch(() => {});
+  },
+};
+
+function encodeWav(chunks, inRate, outRate) {
+  const length = chunks.reduce((n, c) => n + c.length, 0);
+  const input = new Float32Array(length);
+  let o = 0;
+  for (const c of chunks) {
+    input.set(c, o);
+    o += c.length;
+  }
+  // Resample by averaging the input samples that fall into each output sample.
+  const ratio = inRate / outRate;
+  const outLen = Math.floor(length / ratio);
+  const pcm = new Int16Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const start = Math.floor(i * ratio);
+    const end = Math.min(length, Math.floor((i + 1) * ratio));
+    let s = 0;
+    for (let j = start; j < end; j++) s += input[j];
+    const v = Math.max(-1, Math.min(1, s / Math.max(1, end - start)));
+    pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+  }
+  const buf = new ArrayBuffer(44 + pcm.length * 2);
+  const dv = new DataView(buf);
+  const str = (off, s) => [...s].forEach((ch, i) => dv.setUint8(off + i, ch.charCodeAt(0)));
+  str(0, "RIFF");
+  dv.setUint32(4, 36 + pcm.length * 2, true);
+  str(8, "WAVE");
+  str(12, "fmt ");
+  dv.setUint32(16, 16, true);
+  dv.setUint16(20, 1, true); // PCM
+  dv.setUint16(22, 1, true); // mono
+  dv.setUint32(24, outRate, true);
+  dv.setUint32(28, outRate * 2, true);
+  dv.setUint16(32, 2, true);
+  dv.setUint16(34, 16, true);
+  str(36, "data");
+  dv.setUint32(40, pcm.length * 2, true);
+  new Int16Array(buf, 44).set(pcm);
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+async function handleSegment(wav, endedAt) {
+  const form = new FormData();
+  form.append("audio", wav, "partner.wav");
+  form.append("lang", state.lang);
+
+  let heard;
+  try {
+    heard = await thinking(async () => {
+      const res = await fetch("/api/listen", { method: "POST", body: form });
+      if (!res.ok) throw new Error(await errorText(res));
+      return res.json();
+    });
+  } catch (err) {
+    console.warn("[listen] failed:", err.message);
+    toast(`Listening failed: ${err.message}`, 4000);
+    return;
+  }
+  const sttMs = Math.round(performance.now() - endedAt);
+  if (!heard.transcript) {
+    console.log(`[listen] no speech found (${sttMs} ms)`);
+    return;
+  }
+
+  state.history = [...state.history, heard.transcript].slice(-MAX_HISTORY);
+  $("partner-text").textContent = heard.transcript;
+  $("partner-text").title = heard.transcript;
+
+  try {
+    const data = await suggestReplies();
+    const total = Math.round(performance.now() - endedAt);
+    console.log(
+      `[listen] "${heard.transcript}" (${heard.language}) | stt ${sttMs} ms | suggest ${total - sttMs} ms | ` +
+        `total ${total} ms ${total < 3000 ? "✓" : "✗ over 3 s target"}` +
+        (data && !data.quick_replies.length ? " | no new replies (kept row)" : "")
+    );
+  } catch (err) {
+    console.warn("[listen] suggest failed:", err.message);
+  }
+}
+
+function renderMicButton() {
+  const b = $("mic-btn");
+  b.textContent = mic.on ? "⏸ Stop listening" : "🎙 Start listening";
+  b.setAttribute("aria-pressed", String(mic.on));
+  b.classList.toggle("on", mic.on);
+}
+
+// ======================================================================
+// Wiring
+// ======================================================================
 
 function setMode(mode) {
   state.mode = mode;
-  document.querySelectorAll(".mode").forEach((b) => {
-    b.classList.toggle("active", b.dataset.mode === mode);
-  });
+  document.querySelectorAll(".mode").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+  $("phone-banner").hidden = mode !== "phone";
+  if (mic.on) console.log(`[listen] mode=${mode}`);
 }
 
 function init() {
   $("lang-picker").addEventListener("change", (e) => {
     loadSymbols(e.target.value).catch((err) => toast(err.message));
   });
-  document.querySelectorAll(".mode").forEach((b) => {
-    b.addEventListener("click", () => setMode(b.dataset.mode));
+  document.querySelectorAll(".mode").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
+  $("mic-btn").addEventListener("click", () => (mic.on ? mic.stop() : mic.start()));
+  $("clear-btn").addEventListener("click", () => {
+    clearMessage();
+    renderReplies();
   });
-  $("clear-btn").addEventListener("click", clearMessage);
-  $("suggest-btn").addEventListener("click", onSuggest);
+  $("suggest-btn").addEventListener("click", () => onSuggest());
   $("typed").addEventListener("input", updateSuggestButton);
   $("typed").addEventListener("keydown", (e) => {
     if (e.key === "Enter") onSuggest();
   });
   $("urgent-overlay").addEventListener("click", () => ($("urgent-overlay").hidden = true));
 
+  refreshStatus();
   loadSymbols().catch((err) => {
     console.error(err);
     toast("Could not load the board. Is the server running?");

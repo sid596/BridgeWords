@@ -1,5 +1,5 @@
 {
-  "_note": "What each urgent tile says aloud, per language. Spoken immediately with no AI step. Edit freely; keep the ids.",
+  "_note": "Fixed phrases spoken with no AI step: urgent tiles (help, breathing) and the Wait button. Edit freely; keep the ids.",
   "help": {
     "hinglish": "Help! Jaldi aao, mujhe madad chahiye.",
     "hi": "मदद! जल्दी आओ, मुझे मदद चाहिए।",
@@ -13,5 +13,12 @@
     "en": "I can't breathe properly. Please come now!",
     "kn": "ನನಗೆ ಉಸಿರಾಡಲು ಕಷ್ಟವಾಗುತ್ತಿದೆ. ಬೇಗ ಬನ್ನಿ!",
     "mr": "मला श्वास घ्यायला त्रास होतोय. लवकर या!"
+  },
+  "wait": {
+    "hinglish": "Ek minute ruko, please.",
+    "hi": "एक मिनट रुको, प्लीज़।",
+    "en": "One minute, please wait.",
+    "kn": "ಒಂದು ನಿಮಿಷ ಇರಿ, ದಯವಿಟ್ಟು.",
+    "mr": "एक मिनिट थांबा, प्लीज."
   }
 }

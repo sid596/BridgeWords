@@ -21,6 +21,8 @@
       <button type="button" class="mode" data-mode="phone">📞 Phone</button>
     </div>
 
+    <button type="button" id="mic-btn" class="mic-btn" aria-pressed="false">🎙 Start listening</button>
+
     <div class="partner" aria-live="polite">
       <span class="partner-label">Partner said:</span>
       <span id="partner-text" class="partner-text">…</span>
@@ -28,6 +30,10 @@
 
     <span id="status" class="status">ready</span>
   </header>
+
+  <div id="phone-banner" class="phone-banner" hidden>
+    📞 Put the call on speaker next to the tablet
+  </div>
 
   <section class="replies" aria-label="Suggested replies">
     <div id="reply-row" class="reply-row"></div>
