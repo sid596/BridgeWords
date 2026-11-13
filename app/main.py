@@ -30,11 +30,41 @@ DATA = ROOT / "data"
 STATIC = ROOT / "static"
 TTS_CACHE_DIR = ROOT / "cache" / "tts"
 
-load_dotenv(ROOT / ".env")
+ENV_PATH = ROOT / ".env"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("bridgewords")
+
+
+def env_problem() -> str | None:
+    """Why the keys can't be read, in plain words (never includes key values)."""
+    if not ENV_PATH.exists():
+        for wrong in (".env.txt", "env", "env.txt", ".env.example.txt"):
+            if (ROOT / wrong).exists():
+                return f"Found '{wrong}' instead of '.env'. Rename it to exactly .env, then restart the server."
+        return f"No .env file in {ROOT}. Copy .env.example to .env, add the keys, then restart the server."
+    try:
+        ENV_PATH.read_bytes().decode("utf-8")
+    except UnicodeDecodeError:
+        return ".env is not saved as UTF-8 (Windows Notepad often uses UTF-16). Save it as UTF-8, then restart."
+    return None
+
+
+# Load keys only if the file is readable, so a badly saved .env can't crash the server.
+if env_problem() is None:
+    load_dotenv(ENV_PATH)
+
+
+def report_keys() -> None:
+    problem = env_problem()
+    if problem:
+        log.warning(problem)
+    for name in ("GNANI_API_KEY", "OPENAI_API_KEY"):
+        log.info("%s: %s", name, "set" if os.environ.get(name) else "MISSING")
+
+
+report_keys()
 
 # SPEECH: every language BRIDGEWORDS can hear, translate and speak (all 10 Gnani languages + Hinglish).
 #   stt: Prisma v3.0 language list (partners often mix in English). tts: Timbre language ("hi-en" = Hinglish).
@@ -254,7 +284,9 @@ def tts_cache_key(text: str, lang: str) -> str:
 
 def require_gnani_key():
     if not os.environ.get("GNANI_API_KEY"):
-        raise HTTPException(503, "GNANI_API_KEY is not set in .env.")
+        hint = env_problem() or ("GNANI_API_KEY is missing or empty in .env (check the spelling). "
+                                 "Restart the server after editing .env.")
+        raise HTTPException(503, f"GNANI_API_KEY is not set. {hint}")
 
 
 def gnani_error(service: str, e: Exception) -> HTTPException:
