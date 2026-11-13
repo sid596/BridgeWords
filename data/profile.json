@@ -1,0 +1,16 @@
+{
+  "_note": "Synthetic demo persona. Fictional person, fictional address.",
+  "name": "Aarav",
+  "language": "hinglish",
+  "voices": {
+    "hinglish": "Poorvi",
+    "hi": "Yashvi",
+    "en": "Pranav",
+    "mr": "Ishaan",
+    "kn": "Kavin"
+  },
+  "saved_address": "Flat 12, Example Apartments, 4th Cross, Sample Layout, Bengaluru 560000",
+  "personal_meanings": {
+    "love": "Aarav sometimes taps the heart to mean pain. Ask before assuming."
+  }
+}

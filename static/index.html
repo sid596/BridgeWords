@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f3a5f">
+  <title>BRIDGEWORDS</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">BRIDGEWORDS</div>
+
+    <label class="lang">
+      <span class="sr-only">Language</span>
+      <select id="lang-picker" aria-label="Language"></select>
+    </label>
+
+    <div class="mode-toggle" role="group" aria-label="Mode">
+      <button type="button" class="mode active" data-mode="listen">🎧 Listen</button>
+      <button type="button" class="mode" data-mode="phone">📞 Phone</button>
+    </div>
+
+    <div class="partner" aria-live="polite">
+      <span class="partner-label">Partner said:</span>
+      <span id="partner-text" class="partner-text">…</span>
+    </div>
+
+    <span id="status" class="status">ready</span>
+  </header>
+
+  <section class="replies" aria-label="Suggested replies">
+    <div id="reply-row" class="reply-row"></div>
+  </section>
+
+  <main class="board-wrap">
+    <section class="board" aria-label="Symbol board">
+      <nav id="tabs" class="tabs" role="tablist"></nav>
+      <div id="grid" class="grid"></div>
+    </section>
+
+    <aside class="urgent" aria-label="Urgent">
+      <div class="urgent-title">Urgent</div>
+      <div id="urgent-tiles" class="urgent-tiles"></div>
+    </aside>
+  </main>
+
+  <footer class="message-bar">
+    <div class="compose">
+      <div id="chips" class="chips" aria-live="polite">
+        <span class="chips-empty">Tap tiles to build a message</span>
+      </div>
+      <input id="typed" class="typed" type="text" placeholder="Type…" autocomplete="off" autocapitalize="off">
+      <button type="button" id="clear-btn" class="btn btn-secondary">Clear</button>
+      <button type="button" id="suggest-btn" class="btn btn-primary" disabled title="Arrives in step 3">Suggest</button>
+    </div>
+    <div id="results" class="results"></div>
+  </footer>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
