@@ -1,0 +1,17 @@
+{
+  "_note": "What each urgent tile says aloud, per language. Spoken immediately with no AI step. Edit freely; keep the ids.",
+  "help": {
+    "hinglish": "Help! Jaldi aao, mujhe madad chahiye.",
+    "hi": "मदद! जल्दी आओ, मुझे मदद चाहिए।",
+    "en": "Help! Please come now, I need help.",
+    "kn": "ಸಹಾಯ! ಬೇಗ ಬನ್ನಿ, ನನಗೆ ಸಹಾಯ ಬೇಕು.",
+    "mr": "मदत! लवकर या, मला मदत हवी आहे."
+  },
+  "breathing": {
+    "hinglish": "Mujhe saans lene mein takleef ho rahi hai. Jaldi aao!",
+    "hi": "मुझे सांस लेने में तकलीफ हो रही है। जल्दी आओ!",
+    "en": "I can't breathe properly. Please come now!",
+    "kn": "ನನಗೆ ಉಸಿರಾಡಲು ಕಷ್ಟವಾಗುತ್ತಿದೆ. ಬೇಗ ಬನ್ನಿ!",
+    "mr": "मला श्वास घ्यायला त्रास होतोय. लवकर या!"
+  }
+}

@@ -42,6 +42,7 @@
     <aside class="urgent" aria-label="Urgent">
       <div class="urgent-title">Urgent</div>
       <div id="urgent-tiles" class="urgent-tiles"></div>
+      <div id="urgent-state" class="urgent-state">loading voice…</div>
     </aside>
   </main>
 
@@ -52,10 +53,16 @@
       </div>
       <input id="typed" class="typed" type="text" placeholder="Type…" autocomplete="off" autocapitalize="off">
       <button type="button" id="clear-btn" class="btn btn-secondary">Clear</button>
-      <button type="button" id="suggest-btn" class="btn btn-primary" disabled title="Arrives in step 3">Suggest</button>
+      <button type="button" id="suggest-btn" class="btn btn-primary" disabled>Suggest</button>
     </div>
     <div id="results" class="results"></div>
   </footer>
+
+  <div id="urgent-overlay" class="urgent-overlay" role="alert" hidden>
+    <div id="urgent-overlay-emoji" class="urgent-overlay-emoji"></div>
+    <div id="urgent-overlay-text" class="urgent-overlay-text"></div>
+    <div class="urgent-overlay-hint">Tap anywhere to close</div>
+  </div>
 
   <div id="toast" class="toast" role="status" hidden></div>
 

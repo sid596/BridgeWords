@@ -333,3 +333,65 @@ button { cursor: pointer; touch-action: manipulation; }
   .typed { flex: 1 1 100%; }
   .btn { flex: 1; }
 }
+
+/* ---------- Step 2: speech ---------- */
+.urgent-state {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--gap);
+}
+.card {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  padding: 12px 12px 12px 18px;
+  border-radius: var(--radius);
+  border: 2px solid var(--accent);
+  background: var(--accent-soft);
+}
+.card-text {
+  flex: 1;
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.btn-speak {
+  flex: 0 0 auto;
+  background: var(--accent);
+  color: #fff;
+}
+.btn-speak.playing { background: var(--ink); }
+
+body.is-speaking .status { background: var(--selected); color: var(--ink); }
+
+.urgent-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: var(--urgent);
+  color: var(--urgent-ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 32px;
+  text-align: center;
+}
+.urgent-overlay[hidden] { display: none; }
+.urgent-overlay-emoji { font-size: 120px; line-height: 1; }
+.urgent-overlay-text { font-size: clamp(32px, 6vw, 64px); font-weight: 800; line-height: 1.2; }
+.urgent-overlay-hint { opacity: 0.8; font-size: 18px; }
+
+@media (max-width: 720px) {
+  .card { flex-direction: column; align-items: stretch; }
+  .urgent-state { width: 100%; }
+}
