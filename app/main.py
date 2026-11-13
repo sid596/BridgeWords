@@ -36,22 +36,45 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("bridgewords")
 
-# stt: Prisma v3.0 language list (the partner often mixes in English).
-# tts: Timbre language ("hi-en" is Hinglish). browser: device-voice fallback for urgent tiles.
-# v25_voice: per-language voice, used only if profile.json selects timbre-v2.5.
+# SPEECH: every language BRIDGEWORDS can hear, translate and speak (all 10 Gnani languages + Hinglish).
+#   stt: Prisma v3.0 language list (partners often mix in English). tts: Timbre language ("hi-en" = Hinglish).
+#   browser: device-voice fallback. v25_voice: only used if profile.json selects timbre-v2.5.
+#   base: the underlying language (Hinglish is Hindi for "do they speak the same language?").
+SPEECH = {
+    "hinglish": {"name": "Hinglish", "stt": "hi-IN,en-IN", "tts": "hi-en", "browser": "hi-IN", "v25_voice": "Poorvi",
+                 "base": "hi", "llm": "Hinglish (Hindi-English mix written in Roman script, the way people text in India)"},
+    "hi": {"name": "हिन्दी", "stt": "hi-IN,en-IN", "tts": "hi-IN", "browser": "hi-IN", "v25_voice": "Yashvi",
+           "base": "hi", "llm": "Hindi, in Devanagari script"},
+    "en": {"name": "English", "stt": "en-IN,hi-IN", "tts": "en-IN", "browser": "en-IN", "v25_voice": "Pranav",
+           "base": "en", "llm": "simple Indian English"},
+    "kn": {"name": "ಕನ್ನಡ", "stt": "kn-IN,en-IN", "tts": "kn-IN", "browser": "kn-IN", "v25_voice": "Kavin",
+           "base": "kn", "llm": "Kannada, in Kannada script (English words commonly used in Bengaluru are fine)"},
+    "mr": {"name": "मराठी", "stt": "mr-IN,en-IN", "tts": "mr-IN", "browser": "mr-IN", "v25_voice": "Ishaan",
+           "base": "mr", "llm": "Marathi, in Devanagari script"},
+    "ta": {"name": "தமிழ்", "stt": "ta-IN,en-IN", "tts": "ta-IN", "browser": "ta-IN", "v25_voice": "Asmita",
+           "base": "ta", "llm": "Tamil, in Tamil script"},
+    "te": {"name": "తెలుగు", "stt": "te-IN,en-IN", "tts": "te-IN", "browser": "te-IN", "v25_voice": "Suhana",
+           "base": "te", "llm": "Telugu, in Telugu script"},
+    "ml": {"name": "മലയാളം", "stt": "ml-IN,en-IN", "tts": "ml-IN", "browser": "ml-IN", "v25_voice": "Riyaan",
+           "base": "ml", "llm": "Malayalam, in Malayalam script"},
+    "bn": {"name": "বাংলা", "stt": "bn-IN,en-IN", "tts": "bn-IN", "browser": "bn-IN", "v25_voice": "Dhruva",
+           "base": "bn", "llm": "Bengali, in Bengali script"},
+    "gu": {"name": "ગુજરાતી", "stt": "gu-IN,en-IN", "tts": "gu-IN", "browser": "gu-IN", "v25_voice": "Veera",
+           "base": "gu", "llm": "Gujarati, in Gujarati script"},
+    "pa": {"name": "ਪੰਜਾਬੀ", "stt": "pa-IN,en-IN", "tts": "pa-IN", "browser": "pa-IN", "v25_voice": "Zayan",
+           "base": "pa", "llm": "Punjabi, in Gurmukhi script"},
+}
+# Prisma's detected_language_code -> speech language id
+STT_CODE_TO_SPEECH = {v["tts"]: k for k, v in SPEECH.items() if k != "hinglish"}
+
+# BOARD languages: the user reads and taps in one of these (tile labels exist for them).
+# understands: languages the user follows without a translation (profile.json can add more).
 LANGUAGES = {
-    "hinglish": {"name": "Hinglish", "label_col": "label_hinglish", "stt": "hi-IN,en-IN", "tts": "hi-en",
-                 "browser": "hi-IN", "v25_voice": "Poorvi",
-                 "llm": "Hinglish (Hindi-English mix written in Roman script, the way people text in India)"},
-    "hi": {"name": "हिन्दी", "label_col": "label_hi", "stt": "hi-IN,en-IN", "tts": "hi-IN",
-           "browser": "hi-IN", "v25_voice": "Yashvi", "llm": "Hindi, in Devanagari script"},
-    "en": {"name": "English", "label_col": "label_en", "stt": "en-IN,hi-IN", "tts": "en-IN",
-           "browser": "en-IN", "v25_voice": "Pranav", "llm": "simple Indian English"},
-    "kn": {"name": "ಕನ್ನಡ", "label_col": "label_kn", "stt": "kn-IN,en-IN", "tts": "kn-IN",
-           "browser": "kn-IN", "v25_voice": "Kavin",
-           "llm": "Kannada, in Kannada script (English words commonly used in Bengaluru are fine)"},
-    "mr": {"name": "मराठी", "label_col": "label_mr", "stt": "mr-IN,en-IN", "tts": "mr-IN",
-           "browser": "mr-IN", "v25_voice": "Ishaan", "llm": "Marathi, in Devanagari script"},
+    "hinglish": {"name": "Hinglish", "label_col": "label_hinglish", "understands": {"hi", "en"}},
+    "hi": {"name": "हिन्दी", "label_col": "label_hi", "understands": {"hi"}},
+    "en": {"name": "English", "label_col": "label_en", "understands": {"en"}},
+    "kn": {"name": "ಕನ್ನಡ", "label_col": "label_kn", "understands": {"kn"}},
+    "mr": {"name": "मराठी", "label_col": "label_mr", "understands": {"mr"}},
 }
 
 # Urgent tiles speak immediately, with no LLM step (hard rule 2).
@@ -113,6 +136,27 @@ def check_lang(lang: str | None) -> str:
     return lang
 
 
+def check_speech_lang(lang: str | None) -> str:
+    lang = lang or default_lang()
+    if lang not in SPEECH:
+        raise HTTPException(400, f"Unknown language '{lang}'")
+    return lang
+
+
+def understood_by_user(board_lang: str) -> set[str]:
+    extra = {SPEECH[x]["base"] for x in load_profile().get("understands", []) if x in SPEECH}
+    return LANGUAGES[board_lang]["understands"] | extra
+
+
+def partner_plan(board_lang: str, partner_lang: str | None) -> tuple[str | None, bool]:
+    """(language to speak replies in, whether to translate partner lines for the user)."""
+    if not partner_lang or partner_lang not in SPEECH:
+        return None, False
+    base = SPEECH[partner_lang]["base"]
+    spoken = partner_lang if base != SPEECH[board_lang]["base"] else None
+    return spoken, base not in understood_by_user(board_lang)
+
+
 def label_for(row: dict, lang: str) -> str:
     return row.get(LANGUAGES[lang]["label_col"]) or row["label_en"]
 
@@ -135,7 +179,7 @@ def tts_voice(lang: str) -> tuple[str, str]:
     model = profile.get("tts_model") or DEFAULT_TTS_MODEL
     voice = (profile.get("voices") or {}).get(lang) or profile.get("voice")
     if not voice:
-        voice = LANGUAGES[lang]["v25_voice"] if model == "timbre-v2.5" else DEFAULT_V3_VOICE
+        voice = SPEECH[lang]["v25_voice"] if model == "timbre-v2.5" else DEFAULT_V3_VOICE
     return model, voice
 
 
@@ -162,18 +206,26 @@ def get_symbols(lang: str | None = None):
         phrase = phrases.get(row["id"])
         if isinstance(phrase, dict):
             tile["say"] = phrase.get(lang) or tile["label"]
+            # Same phrase in other languages, so an urgent tile can speak the partner's language.
+            tile["say_by_lang"] = {k: v for k, v in phrase.items() if k in SPEECH and isinstance(v, str) and v}
         tiles.append(tile)
 
     if learning.MY_TILES in categories:  # the user's own tiles come first
         categories.remove(learning.MY_TILES)
         categories.insert(0, learning.MY_TILES)
 
+    ui_all = load_json("ui.json")
+    ui = {**ui_all.get("en", {}), **ui_all.get(lang, {})}
+    ui["categories"] = {**ui_all.get("en", {}).get("categories", {}), **ui_all.get(lang, {}).get("categories", {})}
+
     return {
         "lang": lang,
-        "languages": [{"id": k, "name": v["name"], "code": v["browser"]} for k, v in LANGUAGES.items()],
+        "languages": [{"id": k, "name": v["name"], "code": SPEECH[k]["browser"]} for k, v in LANGUAGES.items()],
+        "partner_languages": [{"id": k, "name": v["name"], "code": v["browser"]} for k, v in SPEECH.items()],
         "categories": categories,
         "tiles": tiles,
         "hidden_count": len(learning.hidden_ids() - set(URGENT_IDS)),
+        "ui": ui,
     }
 
 
@@ -196,7 +248,7 @@ def _lock_for(key: str) -> threading.Lock:
 
 def tts_cache_key(text: str, lang: str) -> str:
     model, voice = tts_voice(lang)
-    raw = f"{model}|{LANGUAGES[lang]['tts']}|{voice}|{text}"
+    raw = f"{model}|{SPEECH[lang]['tts']}|{voice}|{text}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -232,7 +284,7 @@ def synthesize_cached(text: str, lang: str) -> tuple[bytes, bool]:
 
         require_gnani_key()
         model, voice = tts_voice(lang)
-        code = LANGUAGES[lang]["tts"]
+        code = SPEECH[lang]["tts"]
         t0 = time.perf_counter()
         try:
             audio = gnani.synthesize(text, language=code, voice=voice, model=model)
@@ -251,7 +303,7 @@ def synthesize_cached(text: str, lang: str) -> tuple[bytes, bool]:
 
 @app.post("/api/speak")
 def speak(req: SpeakRequest):
-    lang = check_lang(req.lang)
+    lang = check_speech_lang(req.lang)  # any language: replies may be spoken in the partner's language
     text = " ".join(req.text.split())
     if not text:
         raise HTTPException(400, "Nothing to speak.")
@@ -272,30 +324,39 @@ class SuggestRequest(BaseModel):
     tiles: list[str] = Field(default_factory=list, max_length=30)
     typed: str = Field(default="", max_length=300)
     lang: str | None = None
+    partner_lang: str | None = None   # what the partner speaks, if not the user's own language
     clarification: Clarification | None = None
 
 
-def fallback(selected: list[dict], typed: str) -> dict:
+def fallback(selected: list[dict], typed: str, spoken_lang: str | None = None, by_id=None) -> dict:
     """No LLM: join what the user chose, so they can still speak it."""
+    base = {"quick_replies": [], "sentences": [], "spoken": [], "clarify": None, "translation": "", "fallback": True}
     words = [t["label"] for t in selected] + ([typed] if typed else [])
-    if words:
-        return {"quick_replies": [], "sentences": [", ".join(words)], "clarify": None, "fallback": True}
-    return {"quick_replies": ["yes", "no", "dont_know", "repeat"], "sentences": [], "clarify": None,
-            "fallback": True}
+    if not words:
+        return {**base, "quick_replies": ["yes", "no", "dont_know", "repeat"]}
+    base["sentences"] = [", ".join(words)]
+    if spoken_lang in LANGUAGES and by_id:  # tile labels exist in the partner's language
+        spoken = [label_for(by_id[t["id"]], spoken_lang) for t in selected] + ([typed] if typed else [])
+        base["spoken"] = [", ".join(spoken)]
+    return base
 
 
 @app.post("/api/suggest")
 async def suggest(req: SuggestRequest):
     lang = check_lang(req.lang)
+    spoken_lang, translate = partner_plan(lang, req.partner_lang)
     rows = board_rows()
     by_id = {r["id"]: r for r in rows}
     selected = [{"id": t, "label": label_for(by_id[t], lang), "meaning": by_id[t]["label_en"]}
                 for t in dict.fromkeys(req.tiles) if t in by_id]
     typed = " ".join(req.typed.split())
     history = [" ".join(h.split())[:500] for h in req.history if h.strip()][-MAX_HISTORY:]
+    # Translate only right after the partner speaks (the reply row); building a reply needs no translation.
+    translate = translate and not selected and not typed and bool(history)
 
     if not selected and not typed and not history:
-        return {"quick_replies": [], "sentences": [], "clarify": None, "fallback": False}
+        return {"quick_replies": [], "sentences": [], "spoken": [], "clarify": None, "translation": "",
+                "fallback": False, "spoken_lang": spoken_lang}
     if typed and learning_enabled():
         learning.add_event("typed", typed)  # words the board lacks are the best learning signal
 
@@ -303,7 +364,10 @@ async def suggest(req: SuggestRequest):
     try:
         result = await llm.suggest(
             profile=load_profile(),
-            language_desc=LANGUAGES[lang]["llm"],
+            language_desc=SPEECH[lang]["llm"],
+            partner_desc=SPEECH[req.partner_lang]["llm"] if (spoken_lang or translate) else None,
+            want_spoken=bool(spoken_lang),
+            want_translation=translate,
             catalogue=[{"id": r["id"], "label_en": r["label_en"]} for r in rows],
             history=history,
             selected=selected,
@@ -313,7 +377,8 @@ async def suggest(req: SuggestRequest):
         result["fallback"] = False
     except Exception as e:  # any LLM problem: never leave the user without words
         log.warning("LLM fallback (%s): %s", type(e).__name__, str(e)[:200])
-        result = fallback(selected, typed)
+        result = fallback(selected, typed, spoken_lang, by_id)
+    result["spoken_lang"] = spoken_lang if result["spoken"] else None
     result["ms"] = round((time.perf_counter() - t0) * 1000)
     return result
 
@@ -321,7 +386,8 @@ async def suggest(req: SuggestRequest):
 # ---------- Listening (Prisma) ----------
 
 @app.post("/api/listen")
-def listen(audio: UploadFile = File(...), lang: str | None = Form(None)):
+def listen(audio: UploadFile = File(...), lang: str | None = Form(None), partner: str | None = Form(None)):
+    """partner: "" = same as the user's language, "auto" = detect, or a speech language id."""
     lang = check_lang(lang)
     data = audio.file.read(MAX_AUDIO_BYTES + 1)
     if not data:
@@ -330,7 +396,12 @@ def listen(audio: UploadFile = File(...), lang: str | None = Form(None)):
         raise HTTPException(413, "Audio too long (max 30 s).")
     require_gnani_key()
 
-    codes = LANGUAGES[lang]["stt"]
+    if partner == "auto":
+        codes = "indic-auto"
+    elif partner:
+        codes = SPEECH[check_speech_lang(partner)]["stt"]
+    else:
+        codes = SPEECH[lang]["stt"]
     t0 = time.perf_counter()
     try:
         result = gnani.transcribe(data, filename=audio.filename or "partner.wav",
@@ -339,11 +410,16 @@ def listen(audio: UploadFile = File(...), lang: str | None = Form(None)):
         raise gnani_error("Prisma", e)
     ms = round((time.perf_counter() - t0) * 1000)
     transcript = " ".join(result["transcript"].split())
-    language = result.get("detected_language_code") or codes.split(",")[0]
+    language = result.get("detected_language_code") or (codes.split(",")[0] if codes != "indic-auto" else "")
     log.info("STT lang=%s detected=%s chars=%d took=%dms", codes, language, len(transcript), ms)
     if transcript and learning_enabled():
         learning.add_event("partner", transcript)
-    return {"transcript": transcript, "language": language, "ms": ms}
+    # Which speech language the partner used (for auto mode and translation).
+    if partner and partner != "auto":
+        partner_lang = partner
+    else:
+        partner_lang = STT_CODE_TO_SPEECH.get(language) or (lang if not partner else None)
+    return {"transcript": transcript, "language": language, "partner_lang": partner_lang, "ms": ms}
 
 
 # ---------- Personal board learning ----------

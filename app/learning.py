@@ -27,7 +27,7 @@ LABEL_COLS = ("label_en", "label_hinglish", "label_hi", "label_kn", "label_mr")
 EVENT_KINDS = ("partner", "spoke", "typed")
 MAX_EVENTS = 300          # conversation log kept on disk
 EVENTS_FOR_ANALYSIS = 120  # most recent entries the AI looks at
-MIN_NEW_EVENTS = 4        # don't re-analyse until this many new entries arrived
+MIN_NEW_PARTNER_LINES = 4  # look for new tile ideas after every 4 things the partner says
 MAX_PENDING = 5
 MAX_PROPOSALS = 3
 ID_RE = re.compile(r"^[a-z][a-z0-9_]{1,30}$")
@@ -37,7 +37,7 @@ _lock = threading.Lock()
 
 def _empty() -> dict:
     return {"tiles": [], "pending": [], "rejected": [], "hidden": [], "events": [],
-            "events_total": 0, "analysed_at": 0}
+            "events_total": 0, "partner_total": 0, "analysed_partner": 0}
 
 
 def store_path() -> Path:
@@ -87,6 +87,8 @@ def add_event(kind: str, text: str) -> None:
         store["events"].append({"t": int(time.time()), "kind": kind, "text": text})
         store["events"] = store["events"][-MAX_EVENTS:]
         store["events_total"] += 1
+        if kind == "partner":
+            store["partner_total"] += 1
 
     update(fn)
 
@@ -96,7 +98,7 @@ def forget() -> None:
     def fn(store):
         store["events"] = []
         store["pending"] = []
-        store["analysed_at"] = store["events_total"]
+        store["analysed_partner"] = store["partner_total"]
 
     update(fn)
 
@@ -259,12 +261,13 @@ def validate_proposals(raw: object, *, events: list[dict], existing: dict[str, s
 
 async def propose(*, profile: dict, board: list[dict], post_chat, model: str, base: str, key: str,
                   force: bool = False) -> list[dict]:
-    """Analyse the log if enough new entries arrived; return all pending proposals."""
+    """Analyse the log after every 4 new partner lines; return all pending proposals.
+    (Typed text and spoken sentences are evidence, but only the partner's lines start an analysis.)"""
     store = load()
-    new_events = store["events_total"] - store["analysed_at"]
+    new_partner_lines = store["partner_total"] - store["analysed_partner"]
     if store["pending"] and len(store["pending"]) >= MAX_PENDING:
         return store["pending"]
-    if not force and new_events < MIN_NEW_EVENTS:
+    if not force and new_partner_lines < MIN_NEW_PARTNER_LINES:
         return store["pending"]
     events = store["events"][-EVENTS_FOR_ANALYSIS:]
     if len(events) < 2:
@@ -305,7 +308,7 @@ async def propose(*, profile: dict, board: list[dict], post_chat, model: str, ba
 
     def fn(s):
         s["pending"] = (s["pending"] + fresh)[:MAX_PENDING]
-        s["analysed_at"] = s["events_total"]
+        s["analysed_partner"] = s["partner_total"]
         return s["pending"]
 
     return update(fn)

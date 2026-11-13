@@ -560,3 +560,21 @@ body.is-speaking .status { background: var(--selected); color: var(--ink); }
   .debug { flex-wrap: wrap; }
   .debug-text { white-space: normal; }
 }
+
+/* ---------- Partner language + translation ---------- */
+.partner { flex-direction: column; align-items: stretch; gap: 2px; }
+.partner-line { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.partner-meaning .partner-text { color: var(--selected); }
+.partner-lang { display: flex; flex-direction: column; gap: 2px; }
+.partner-lang-label { font-size: 12px; opacity: 0.8; }
+.partner-lang select { min-height: 44px; }
+
+.card-body { flex: 1; min-width: 0; }
+.card-spoken {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 17px;
+  line-height: 1.35;
+}

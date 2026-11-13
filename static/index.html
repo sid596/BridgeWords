@@ -17,21 +17,32 @@
     </label>
 
     <div class="mode-toggle" role="group" aria-label="Mode">
-      <button type="button" class="mode active" data-mode="listen">🎧 Listen</button>
-      <button type="button" class="mode" data-mode="phone">📞 Phone</button>
+      <button type="button" class="mode active" data-mode="listen" data-i18n="listen">🎧 Listen</button>
+      <button type="button" class="mode" data-mode="phone" data-i18n="phone">📞 Phone</button>
     </div>
+
+    <label class="lang partner-lang">
+      <span class="partner-lang-label" data-i18n="partner_speaks">Partner speaks</span>
+      <select id="partner-picker" aria-label="Partner's language"></select>
+    </label>
 
     <button type="button" id="mic-btn" class="mic-btn" aria-pressed="false">🎙 Start listening</button>
 
     <div class="partner" aria-live="polite">
-      <span class="partner-label">Partner said:</span>
-      <span id="partner-text" class="partner-text">…</span>
+      <div class="partner-line">
+        <span class="partner-label" data-i18n="partner_said">Partner said:</span>
+        <span id="partner-text" class="partner-text">…</span>
+      </div>
+      <div id="partner-meaning-line" class="partner-line partner-meaning" hidden>
+        <span class="partner-label" data-i18n="meaning">Meaning:</span>
+        <span id="partner-meaning" class="partner-text"></span>
+      </div>
     </div>
 
     <span id="status" class="status" role="button" tabindex="0" title="Tap for timings">ready</span>
   </header>
 
-  <div id="phone-banner" class="phone-banner" hidden>
+  <div id="phone-banner" class="phone-banner" hidden data-i18n="phone_banner">
     📞 Put the call on speaker next to the tablet
   </div>
 
@@ -53,19 +64,19 @@
       <div id="ideas" class="ideas" hidden></div>
       <div class="tabs-row">
         <nav id="tabs" class="tabs" role="tablist"></nav>
-        <button type="button" id="edit-btn" class="edit-btn">✏️ Edit</button>
+        <button type="button" id="edit-btn" class="edit-btn" data-i18n="edit">✏️ Edit</button>
       </div>
       <div id="edit-bar" class="edit-bar" hidden>
-        <span class="edit-hint">Tap a tile to hide it. Your own tiles are removed.</span>
+        <span class="edit-hint" data-i18n="edit_hint">Tap a tile to hide it. Your own tiles are removed.</span>
         <button type="button" id="unhide-btn" class="btn btn-secondary" hidden>↩ Show hidden</button>
-        <button type="button" id="forget-btn" class="btn btn-secondary">🧹 Forget conversations</button>
-        <button type="button" id="edit-done" class="btn btn-primary">Done</button>
+        <button type="button" id="forget-btn" class="btn btn-secondary" data-i18n="forget">🧹 Forget conversations</button>
+        <button type="button" id="edit-done" class="btn btn-primary" data-i18n="done">Done</button>
       </div>
       <div id="grid" class="grid"></div>
     </section>
 
     <aside class="urgent" aria-label="Urgent">
-      <div class="urgent-title">Urgent</div>
+      <div class="urgent-title" data-i18n="urgent">Urgent</div>
       <div id="urgent-tiles" class="urgent-tiles"></div>
       <div id="urgent-state" class="urgent-state">loading voice…</div>
     </aside>
@@ -76,9 +87,9 @@
       <div id="chips" class="chips" aria-live="polite">
         <span class="chips-empty">Tap tiles to build a message</span>
       </div>
-      <input id="typed" class="typed" type="text" placeholder="Type…" autocomplete="off" autocapitalize="off">
-      <button type="button" id="clear-btn" class="btn btn-secondary">Clear</button>
-      <button type="button" id="suggest-btn" class="btn btn-primary" disabled>Suggest</button>
+      <input id="typed" class="typed" type="text" placeholder="Type…" data-i18n-placeholder="type_placeholder" autocomplete="off" autocapitalize="off">
+      <button type="button" id="clear-btn" class="btn btn-secondary" data-i18n="clear">Clear</button>
+      <button type="button" id="suggest-btn" class="btn btn-primary" disabled data-i18n="suggest">Suggest</button>
     </div>
     <div id="results" class="results"></div>
   </footer>
@@ -86,7 +97,7 @@
   <div id="urgent-overlay" class="urgent-overlay" role="alert" hidden>
     <div id="urgent-overlay-emoji" class="urgent-overlay-emoji"></div>
     <div id="urgent-overlay-text" class="urgent-overlay-text"></div>
-    <div class="urgent-overlay-hint">Tap anywhere to close</div>
+    <div class="urgent-overlay-hint" data-i18n="tap_to_close">Tap anywhere to close</div>
   </div>
 
   <div id="toast" class="toast" role="status" hidden></div>

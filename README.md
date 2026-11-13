@@ -10,7 +10,8 @@ Many people with cerebral palsy, motor neurone disease or aphasia understand eve
 3. **Builds full sentences from a few taps**: Khichdi + Soft food → *"Mujhe khichdi chahiye, thodi soft."*
 4. **Asks instead of guessing** when taps are ambiguous: Pain + Tomorrow → *"Pain now, or about tomorrow's doctor visit?"*
 5. **Speaks only what the user approves**, in their language and their own voice (Timbre).
-6. **Learns the person's life.** The board starts with tiles most people need. Then it proposes tiles that are only theirs: 🪂 a parachute for a skydiver, 🍝 pasta instead of khichdi, 🩼 their crutch.
+6. **Bridges languages.** If the partner speaks a language the user doesn't (a Kannada-only chemist, a Hindi- and English-speaking user), it translates what they said and speaks the reply **in the partner's language**. This covers all 10 languages Gnani supports.
+7. **Learns the person's life.** The board starts with tiles most people need. Then it proposes tiles that are only theirs: 🪂 a parachute for a skydiver, 🍝 pasta instead of khichdi, 🩼 their crutch.
 
 > Prototype. All data is synthetic: Aarav is a fictional persona with a fictional address. It has not yet been tested with AAC users.
 
@@ -22,9 +23,19 @@ Many people with cerebral palsy, motor neurone disease or aphasia understand eve
 - Every suggestion row also offers **Something else** and **Wait**, so the user is never boxed in.
 - **Half-duplex:** the mic ignores everything while the tablet is speaking, plus 300 ms, so phone mode never hears itself.
 
+## Languages and translation
+
+- **Board language** (Hinglish, हिन्दी, English, ಕನ್ನಡ, मराठी): everything the user reads changes, including tiles, buttons, tabs, status and messages. Interface text lives in `data/ui.json`.
+- **Partner speaks** (top bar): *Same as me*, *Auto-detect* (Prisma `indic-auto`), or any of the 10 Gnani languages: Hindi, English, Kannada, Marathi, Tamil, Telugu, Malayalam, Bengali, Gujarati, Punjabi, plus Hinglish.
+- When the partner's language is one the user doesn't understand (`understands` in `data/profile.json`):
+  - **Partner said:** ಹೇಳಿ ಸರ್, ಏನು ಬೇಕು?  →  **Meaning:** Boliye sir, kya chahiye?
+  - The user builds a reply in their own language, and each card shows **🗣 Will say (ಕನ್ನಡ): ನನಗೆ ಪ್ಯಾರಾಸಿಟಮಾಲ್ ಬೇಕು.** Speak says the Kannada version.
+  - Urgent tiles and Wait speak the partner's language when the phrase exists in it.
+- The translation comes from the same AI call as the suggestions, so it adds no extra wait (about 1.3–1.5 s). If the AI fails, the tile labels are spoken in the partner's language where the board has them.
+
 ## A board that learns the person
 
-Everybody's life is different, and a fixed board can't know that this user skydives, eats pasta or never goes anywhere without a crutch. BRIDGEWORDS keeps a private log of the conversation: what partners said, what the user typed (the strongest signal, because typing is slow for them), and what they chose to speak. Every few new lines it asks the AI: *what does this person talk about often that the board lacks?*
+Everybody's life is different, and a fixed board can't know that this user skydives, eats pasta or never goes anywhere without a crutch. BRIDGEWORDS keeps a private log of the conversation: what partners said, what the user typed (the strongest signal, because typing is slow for them), and what they chose to speak. After every 4 things a partner says, it asks the AI: *what does this person talk about often that the board lacks?*
 
 - **The AI proposes, the user decides.** Ideas appear as "✨ New tile ideas: 🪂 Parachute [+ Add] [✕]". Nothing is added by itself, which is the same principle as Speak.
 - **No invented interests.** Each idea must quote at least 2 real lines from the log, or something the user typed. The server checks that the quotes exist, and drops anything already on the board, rejected before, or private (phone numbers, addresses, money).
@@ -112,7 +123,7 @@ Code: `app/main.py` (API), `app/llm.py` (prompt + validation), `app/learning.py`
 python -m pytest -q
 ```
 
-67 tests, all offline: Gnani and OpenAI are mocked, and a guard fails any test that tries to reach the network. They cover suggestion JSON validation, the fallback for every kind of AI failure, urgent tiles (fixed phrase, no AI, cached), TTS caching and errors, the listening endpoint, and board learning (proposals never auto-add, evidence checks, reject/hide/forget, privacy switch).
+91 tests, all offline: Gnani and OpenAI are mocked, and a guard fails any test that tries to reach the network. They cover suggestion JSON validation, the fallback for every kind of AI failure, urgent tiles (fixed phrase, no AI, cached), TTS caching and errors, the listening endpoint, board learning (proposals never auto-add, evidence checks, reject/hide/forget, privacy switch), and languages (translation only when needed, replies spoken in the partner's language, all 10 Gnani languages, complete interface text in every board language).
 
 ## Measured latency (Mac, home Wi-Fi, warm)
 

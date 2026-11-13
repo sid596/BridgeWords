@@ -92,7 +92,7 @@ def test_one_mention_is_not_enough_unless_the_user_typed_it(client, chat):
     assert client.post("/api/learn/propose").json()["pending"] == []
 
     learning.add_event("typed", "crutch")
-    for line in ["a1 b1", "a2 b2", "a3 b3"]:
+    for line in ["a1 b1", "a2 b2", "a3 b3", "a4 b4"]:
         learning.add_event("partner", line)
     chat.result = proposals({**crutch, "evidence": ["crutch"]})
     assert [p["id"] for p in client.post("/api/learn/propose").json()["pending"]] == ["crutch"]
@@ -192,3 +192,16 @@ def test_hinglish_board_uses_hinglish_labels(client):
     with open("data/symbols.csv", encoding="utf-8", newline="") as f:
         row = next(r for r in csv.DictReader(f) if r["id"] == "dal_chawal")
     assert tiles["dal_chawal"] == row["label_hinglish"] != row["label_en"]
+
+
+def test_only_partner_lines_trigger_an_analysis(client, chat):
+    log_lines(client, SKYDIVING[:3])                       # 3 partner lines
+    for i in range(5):
+        learning.add_event("spoke", f"sentence {i}")       # spoken/typed lines are evidence, not triggers
+        learning.add_event("typed", f"word {i}")
+    client.post("/api/learn/propose")
+    assert chat.calls == []
+    learning.add_event("partner", "Parachute ready hai?")  # 4th partner line
+    chat.result = proposals()
+    client.post("/api/learn/propose")
+    assert len(chat.calls) == 1

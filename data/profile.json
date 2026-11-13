@@ -3,6 +3,11 @@
   "name": "Aarav",
   "gender": "male",
   "language": "hinglish",
+  "understands": [
+    "hi",
+    "en"
+  ],
+  "_understands_note": "Languages the user follows without translation. If the partner speaks anything else (e.g. Kannada), BRIDGEWORDS shows a translation and speaks replies in the partner's language.",
   "learning": true,
   "_learning_note": "true: BRIDGEWORDS proposes new tiles from this person's conversations (stored only in user_data/, git-ignored). The user approves every tile.",
   "tts_model": "timbre-v3.0",

@@ -18,7 +18,26 @@ const state = {
   editMode: false,
   hiddenCount: 0,
   ideas: [],             // AI tile proposals waiting for the user's decision
+  ui: {},                // interface text in the board language (data/ui.json)
+  partnerLanguages: [],  // every language the partner may speak (all Gnani languages)
+  partnerSetting: "",    // "" = same as mine, "auto" = detect, or a language id
+  partnerDetected: null, // last language Prisma heard in auto mode
 };
+
+// Interface text in the board language, falling back to the key.
+function t(key) {
+  return state.ui[key] ?? key;
+}
+
+function langName(id) {
+  return state.partnerLanguages.find((l) => l.id === id)?.name || id;
+}
+
+// The partner's language for this conversation (null = same as the user's).
+function partnerLang() {
+  if (state.partnerSetting === "auto") return state.partnerDetected;
+  return state.partnerSetting || null;
+}
 
 const MAX_HISTORY = 6;
 const TXT = "txt:";
@@ -62,7 +81,7 @@ function refreshStatus() {
   if (mic.on && mic.recording) s = "hearing";
   if (busy > 0) s = "thinking";
   if (state.speaking) s = "speaking";
-  $("status").textContent = s;
+  $("status").textContent = (state.ui.status && state.ui.status[s]) || s;
   $("status").dataset.state = s;
 }
 
@@ -132,7 +151,8 @@ const debug = {
 };
 
 function langCode(lang) {
-  return state.languages.find((l) => l.id === lang)?.code || "en-IN";
+  const all = [...state.languages, ...state.partnerLanguages];
+  return all.find((l) => l.id === lang)?.code || "en-IN";
 }
 
 async function postJSON(url, body) {
@@ -261,9 +281,15 @@ function speakWithDevice(text, lang) {
 }
 
 // Fixed phrases (urgent tiles, Wait): one tap speaks a known phrase, no AI step.
+// If the partner speaks another language and the phrase exists in it, say it in theirs.
+function fixedPhrase(tile) {
+  const pl = partnerLang();
+  if (pl && tile.say_by_lang && tile.say_by_lang[pl]) return { text: tile.say_by_lang[pl], lang: pl };
+  return { text: tile.say || tile.label, lang: state.lang };
+}
+
 async function speakFixed(tile) {
-  const text = tile.say || tile.label;
-  const lang = state.lang;
+  const { text, lang } = fixedPhrase(tile);
   try {
     await speak(text, lang);
   } catch (err) {
@@ -277,13 +303,18 @@ async function speakFixed(tile) {
 
 async function prefetchFixed() {
   const lang = state.lang;
-  const fixed = state.tiles.filter((t) => t.say);
+  const fixed = state.tiles.filter((x) => x.say);
   const box = $("urgent-state");
-  box.textContent = "loading voice…";
-  const results = await Promise.allSettled(fixed.map((t) => fetchSpeech(t.say, lang)));
+  box.textContent = t("voice_loading");
+  const results = await Promise.allSettled(
+    fixed.map((tile) => {
+      const p = fixedPhrase(tile);
+      return fetchSpeech(p.text, p.lang);
+    })
+  );
   if (lang !== state.lang) return; // language changed meanwhile
   const failed = results.find((r) => r.status === "rejected");
-  box.textContent = failed ? "⚠ device voice" : "🔊 voice ready";
+  box.textContent = failed ? t("device_voice") : t("voice_ready");
   box.title = failed ? failed.reason.message : "";
   if (failed) console.warn("[urgent] voice not cached:", failed.reason.message);
 }
@@ -291,7 +322,7 @@ async function prefetchFixed() {
 function onUrgent(tile) {
   console.log("[urgent]", tile.id);
   $("urgent-overlay-emoji").textContent = tile.emoji;
-  $("urgent-overlay-text").textContent = tile.say || tile.label;
+  $("urgent-overlay-text").textContent = fixedPhrase(tile).text;
   $("urgent-overlay").hidden = false;
   speakFixed(tile);
 }
@@ -313,6 +344,8 @@ async function loadSymbols(lang) {
 
   state.lang = data.lang;
   state.languages = data.languages;
+  state.partnerLanguages = data.partner_languages || [];
+  state.ui = data.ui || {};
   state.categories = data.categories;
   state.tiles = data.tiles;
   state.byId = Object.fromEntries(data.tiles.map((t) => [t.id, t]));
@@ -379,18 +412,18 @@ async function onSuggest(clarification = null) {
         tiles,
         typed,
         lang: state.lang,
+        partner_lang: partnerLang(),
         clarification,
       })
     );
     if (token !== suggestToken) return; // a newer request superseded this one
     debug.note("suggest", `suggest ${Math.round(performance.now() - t0)} ms${data.fallback ? " (fallback)" : ""}`);
-    if (typed) learnSoon();
     console.log(
       `[suggest] ${Math.round(performance.now() - t0)} ms (llm ${data.ms} ms)` +
         (data.fallback ? " FALLBACK" : "")
     );
     if (data.clarify) renderClarify(data.clarify);
-    else renderSentences(data.sentences, data.fallback);
+    else renderSentences(data);
   } catch (err) {
     console.warn("[suggest] failed:", err.message);
     toast(err.message, 4000);
@@ -404,9 +437,16 @@ let replyToken = 0;
 async function suggestReplies() {
   const token = ++replyToken;
   const data = await thinking(() =>
-    postJSON("/api/suggest", { history: state.history, tiles: [], typed: "", lang: state.lang })
+    postJSON("/api/suggest", {
+      history: state.history,
+      tiles: [],
+      typed: "",
+      lang: state.lang,
+      partner_lang: partnerLang(),
+    })
   );
   if (token !== replyToken) return data;
+  showMeaning(data.translation);
   if (data.quick_replies.length) {
     state.quickReplies = data.quick_replies;
     renderReplies(true);
@@ -419,7 +459,9 @@ async function suggestReplies() {
 // ======================================================================
 
 function renderAll() {
+  applyUI();
   renderLangPicker();
+  renderPartnerPicker();
   renderReplies();
   renderTabs();
   renderGrid();
@@ -475,7 +517,7 @@ function renderReplies(fresh = false) {
 function renderTabs() {
   $("tabs").replaceChildren(
     ...state.categories.map((cat) => {
-      const b = button("tab", cat, () => {
+      const b = button("tab", (state.ui.categories && state.ui.categories[cat]) || cat, () => {
         state.activeCat = cat;
         renderTabs();
         renderGrid();
@@ -520,7 +562,7 @@ function renderChips() {
   const box = $("chips");
   updateSuggestButton();
   if (state.selected.length === 0) {
-    box.replaceChildren(el("span", "chips-empty", "Tap tiles to build a message"));
+    box.replaceChildren(el("span", "chips-empty", t("chips_empty")));
     return;
   }
   box.replaceChildren(
@@ -550,16 +592,22 @@ function somethingElseFromResults() {
 }
 
 // Sentence cards: text + Speak. Nothing is spoken until Speak is tapped (hard rule 1).
-function renderSentences(sentences, isFallback) {
+// When the partner speaks another language, each card shows what will be said in theirs.
+function renderSentences({ sentences, spoken = [], spoken_lang: spokenLang, fallback: isFallback }) {
   const lang = state.lang;
-  const cards = sentences.map((text) => {
-    const speakBtn = el("button", "btn btn-speak", "🔊 Speak");
+  const cards = sentences.map((text, i) => {
+    const say = spokenLang && spoken[i] ? { text: spoken[i], lang: spokenLang } : { text, lang };
+    const speakBtn = el("button", "btn btn-speak", t("speak"));
     speakBtn.type = "button";
-    speakBtn.addEventListener("click", () => onSpeakCard(speakBtn, text, lang));
-    return el("div", "card", [el("p", "card-text", text), speakBtn]);
+    speakBtn.addEventListener("click", () => onSpeakCard(speakBtn, say.text, say.lang, text));
+    const body = [el("p", "card-text", text)];
+    if (say.lang !== lang) {
+      body.push(el("p", "card-spoken", [`🗣 ${t("will_say")} (${langName(say.lang)}): `, el("strong", null, say.text)]));
+    }
+    return el("div", "card", [el("div", "card-body", body), speakBtn]);
   });
   const children = [];
-  if (isFallback) children.push(el("p", "note", "AI suggestions unavailable: your words as tapped."));
+  if (isFallback) children.push(el("p", "note", t("fallback_note")));
   children.push(el("div", "cards", cards));
   children.push(el("div", "row-escape", escapeButtons(somethingElseFromResults)));
   $("results").replaceChildren(...children);
@@ -578,26 +626,26 @@ function renderClarify({ question, options }) {
   );
 }
 
-async function onSpeakCard(btn, text, lang) {
+async function onSpeakCard(btn, text, lang, shownText = text) {
   if (btn.classList.contains("playing")) {
     stopSpeaking();
     return;
   }
   document.querySelectorAll(".btn-speak.playing").forEach((b) => {
     b.classList.remove("playing");
-    b.textContent = "🔊 Speak";
+    b.textContent = t("speak");
   });
   btn.classList.add("playing");
-  btn.textContent = "⏹ Stop";
+  btn.textContent = t("stop");
   try {
     await speak(text, lang);
-    logSpoken(text);
+    logSpoken(shownText);
   } catch (err) {
     console.warn("[speak] failed:", err.message);
     toast(err.message, 4000);
   } finally {
     btn.classList.remove("playing");
-    btn.textContent = "🔊 Speak";
+    btn.textContent = t("speak");
   }
 }
 
@@ -817,6 +865,7 @@ async function handleSegment(wav, endedAt) {
   const form = new FormData();
   form.append("audio", wav, "partner.wav");
   form.append("lang", state.lang);
+  form.append("partner", state.partnerSetting);
 
   let heard;
   try {
@@ -837,8 +886,10 @@ async function handleSegment(wav, endedAt) {
   }
 
   state.history = [...state.history, heard.transcript].slice(-MAX_HISTORY);
+  if (state.partnerSetting === "auto") state.partnerDetected = heard.partner_lang;
   $("partner-text").textContent = heard.transcript;
   $("partner-text").title = heard.transcript;
+  showMeaning(""); // the translation arrives with the reply suggestions
   debug.note("heard", `heard (${heard.language}): "${heard.transcript}"`);
   learnSoon(); // the server logged this line for personal-board learning
 
@@ -858,7 +909,7 @@ async function handleSegment(wav, endedAt) {
 
 function renderMicButton() {
   const b = $("mic-btn");
-  b.textContent = mic.on ? "⏸ Stop listening" : "🎙 Start listening";
+  b.textContent = mic.on ? t("stop_listening") : t("start_listening");
   b.setAttribute("aria-pressed", String(mic.on));
   b.classList.toggle("on", mic.on);
 }
@@ -871,7 +922,7 @@ function renderMicButton() {
 let learnTimer = null;
 
 // Ask for tile ideas a little after activity settles, so it never competes with live replies.
-// The server only calls the AI once enough new conversation has arrived.
+// Only partner lines trigger this; the server calls the AI after every 4 new partner lines.
 function learnSoon() {
   clearTimeout(learnTimer);
   learnTimer = setTimeout(proposeIdeas, 15000);
@@ -883,7 +934,6 @@ function logSpoken(text) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
   }).catch(() => {});
-  learnSoon();
 }
 
 async function loadIdeas() {
@@ -911,12 +961,12 @@ function showIdeas(ideas) {
   box.hidden = ideas.length === 0;
   if (!ideas.length) return box.replaceChildren();
   box.replaceChildren(
-    el("span", "ideas-title", "✨ New tile ideas"),
+    el("span", "ideas-title", t("ideas_title")),
     ...ideas.map((idea) =>
       el("div", "idea", [
         el("span", "emoji", idea.emoji),
         el("span", "idea-text", [el("strong", null, idea.label), el("small", null, idea.reason)]),
-        button("idea-add", "+ Add", () => decideIdea(idea, true)),
+        button("idea-add", t("add"), () => decideIdea(idea, true)),
         button("idea-no", "✕", () => decideIdea(idea, false)),
       ])
     )
@@ -940,7 +990,7 @@ async function decideIdea(idea, accept) {
     state.activeCat = state.categories[0]; // "My tiles"
     renderTabs();
     renderGrid();
-    toast(`${idea.emoji} ${idea.label} added to My tiles`);
+    toast(`${idea.emoji} ${idea.label}: ${t("added")}`);
   }
 }
 
@@ -951,12 +1001,12 @@ function setEditMode(on) {
   $("edit-bar").hidden = !on;
   $("edit-btn").hidden = on;
   $("unhide-btn").hidden = !on || state.hiddenCount === 0;
-  $("unhide-btn").textContent = `↩ Show hidden (${state.hiddenCount})`;
+  $("unhide-btn").textContent = `${t("show_hidden")} (${state.hiddenCount})`;
   renderGrid();
 }
 
 async function hideTile(tile) {
-  if (tile.learned && !confirm(`Remove ${tile.label} from My tiles?`)) return;
+  if (tile.learned && !confirm(`${tile.emoji} ${tile.label}: ${t("remove_confirm")}`)) return;
   try {
     await postJSON("/api/tiles/hide", { id: tile.id });
   } catch (err) {
@@ -973,10 +1023,53 @@ async function unhideAll() {
 }
 
 async function forgetConversations() {
-  if (!confirm("Forget all saved conversations? Tiles you added stay.")) return;
+  if (!confirm(t("forget_confirm"))) return;
   await postJSON("/api/learn/forget", {}).catch((err) => toast(err.message));
   showIdeas([]);
-  toast("Conversation history forgotten");
+  toast(t("forgotten"));
+}
+
+// ======================================================================
+// Languages: interface text, partner language, translation
+// ======================================================================
+
+function applyUI() {
+  document.querySelectorAll("[data-i18n]").forEach((node) => {
+    node.textContent = t(node.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
+    node.placeholder = t(node.dataset.i18nPlaceholder);
+  });
+  renderMicButton();
+  refreshStatus();
+}
+
+function renderPartnerPicker() {
+  const option = (value, label) => {
+    const o = el("option", null, label);
+    o.value = value;
+    o.selected = value === state.partnerSetting;
+    return o;
+  };
+  $("partner-picker").replaceChildren(
+    option("", t("same_as_me")),
+    option("auto", t("auto_detect")),
+    ...state.partnerLanguages.map((l) => option(l.id, l.name))
+  );
+}
+
+function setPartnerSetting(value) {
+  state.partnerSetting = value;
+  state.partnerDetected = null;
+  showMeaning("");
+  prefetchFixed(); // urgent phrases in the partner's language, if available
+  console.log(`[lang] partner language: ${value || "same as mine"}`);
+}
+
+function showMeaning(text) {
+  $("partner-meaning").textContent = text || "";
+  $("partner-meaning-line").hidden = !text;
+  if (text) debug.note("heard", `${debug.lines.heard || ""} → "${text}"`);
 }
 
 // ======================================================================
@@ -991,6 +1084,7 @@ function setMode(mode) {
 }
 
 function init() {
+  $("partner-picker").addEventListener("change", (e) => setPartnerSetting(e.target.value));
   $("lang-picker").addEventListener("change", (e) => {
     loadSymbols(e.target.value).catch((err) => toast(err.message));
   });

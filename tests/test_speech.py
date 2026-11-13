@@ -126,3 +126,43 @@ def test_listen_prisma_error_is_502(client, stt):
     stt.result = httpx.ConnectError("down")
     r = client.post("/api/listen", files={"audio": ("p.wav", WAV, "audio/wav")})
     assert r.status_code == 502
+
+
+# ---------- Partner languages (all Gnani languages) ----------
+
+def test_listen_auto_detect_reports_the_partners_language(client, stt):
+    stt.result = {"success": True, "transcript": "ಏನು ಬೇಕು?", "detected_language_code": "kn-IN"}
+    body = client.post("/api/listen", files={"audio": ("p.wav", WAV, "audio/wav")},
+                       data={"lang": "hinglish", "partner": "auto"}).json()
+    assert stt.calls[0][1]["language"] == "indic-auto"
+    assert body["partner_lang"] == "kn"
+
+
+def test_listen_with_a_chosen_partner_language(client, stt):
+    client.post("/api/listen", files={"audio": ("p.wav", WAV, "audio/wav")}, data={"lang": "hi", "partner": "ta"})
+    assert stt.calls[0][1]["language"] == "ta-IN,en-IN"
+
+
+@pytest.mark.parametrize("lang, code", [("ta", "ta-IN"), ("te", "te-IN"), ("ml", "ml-IN"), ("bn", "bn-IN"),
+                                        ("gu", "gu-IN"), ("pa", "pa-IN")])
+def test_replies_can_be_spoken_in_every_gnani_language(client, tts, lang, code):
+    assert client.post("/api/speak", json={"text": "Hello", "lang": lang}).status_code == 200
+    assert tts.calls[-1][1]["language"] == code
+
+
+def test_symbols_carry_interface_text_and_partner_languages(client):
+    data = client.get("/api/symbols?lang=hi").json()
+    assert data["ui"]["suggest"] == "सुझाओ"
+    assert data["ui"]["categories"]["Food and drink"] == "खाना-पीना"
+    assert len(data["partner_languages"]) == 11              # 10 Gnani languages + Hinglish
+    help_tile = next(t for t in data["tiles"] if t["id"] == "help")
+    assert set(help_tile["say_by_lang"]) == {"hinglish", "hi", "en", "kn", "mr"}
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_every_board_language_has_complete_interface_text(client, lang):
+    import json
+    with open("data/ui.json", encoding="utf-8") as f:
+        ui = json.load(f)
+    missing = set(ui["en"]) - set(ui[lang])
+    assert not missing, f"{lang} is missing {sorted(missing)}"

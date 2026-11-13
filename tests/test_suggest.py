@@ -23,7 +23,8 @@ def test_partner_line_returns_only_quick_replies():
         {"quick_replies": ["dal_chawal", "khichdi", "wait", "something_else", "khichdi", "not_hungry"],
          "sentences": ["should be dropped"], "clarify": {"question": "q?", "options": ["a", "b"]}},
         has_input=False, clarified=False)
-    assert out == {"quick_replies": ["dal_chawal", "khichdi", "not_hungry"], "sentences": [], "clarify": None}
+    assert out == {"quick_replies": ["dal_chawal", "khichdi", "not_hungry"], "sentences": [], "spoken": [],
+                   "clarify": None, "translation": ""}
 
 
 def test_quick_replies_capped_and_cleaned():
@@ -35,7 +36,8 @@ def test_quick_replies_capped_and_cleaned():
 def test_sentences_capped_at_three_and_deduped():
     out = llm.validate({"quick_replies": ["yes"], "sentences": ["One.", "one.", "Two.", "Three.", "Four."],
                         "clarify": None}, has_input=True, clarified=False)
-    assert out == {"quick_replies": [], "sentences": ["One.", "Two.", "Three."], "clarify": None}
+    assert out["sentences"] == ["One.", "Two.", "Three."]
+    assert out["quick_replies"] == [] and out["clarify"] is None
 
 
 def test_clarify_means_no_sentences():
@@ -57,7 +59,7 @@ def test_never_asks_twice_after_a_clarification():
     out = llm.validate({"quick_replies": [], "sentences": ["Mujhe abhi dard hai."],
                         "clarify": {"question": "Again?", "options": ["a", "b"]}},
                        has_input=True, clarified=True)
-    assert out == {"quick_replies": [], "sentences": ["Mujhe abhi dard hai."], "clarify": None}
+    assert out["sentences"] == ["Mujhe abhi dard hai."] and out["clarify"] is None
 
 
 @pytest.mark.parametrize("raw", [
@@ -151,3 +153,86 @@ def test_nothing_to_suggest_makes_no_llm_call(client, chat):
 
 def test_bad_language_rejected(client, chat):
     assert client.post("/api/suggest", json={"tiles": ["water"], "lang": "xx"}).status_code == 400
+
+
+# ---------- Partner speaks another language (translation) ----------
+
+
+
+def test_spoken_versions_stay_paired_with_sentences():
+    out = llm.validate({"quick_replies": [], "sentences": ["Mujhe dawai chahiye.", "mujhe dawai chahiye.", "Dawai do."],
+                        "spoken": ["ನನಗೆ ಔಷಧಿ ಬೇಕು.", "ನನಗೆ ಔಷಧಿ ಬೇಕು!", "ಔಷಧಿ ಕೊಡಿ."], "clarify": None,
+                        "translation": "ignored"},
+                       has_input=True, clarified=False, want_spoken=True)
+    assert out["sentences"] == ["Mujhe dawai chahiye.", "Dawai do."]
+    assert out["spoken"] == ["ನನಗೆ ಔಷಧಿ ಬೇಕು.", "ಔಷಧಿ ಕೊಡಿ."]          # the duplicate's pair was dropped with it
+    assert out["translation"] == ""                                  # not asked for
+
+
+def test_missing_spoken_versions_are_rejected():
+    with pytest.raises(ValueError):
+        llm.validate({"quick_replies": [], "sentences": ["A.", "B."], "spoken": ["X."], "clarify": None,
+                      "translation": ""}, has_input=True, clarified=False, want_spoken=True)
+
+
+def test_translation_comes_with_quick_replies():
+    out = llm.validate({"quick_replies": ["500", "650"], "sentences": [], "spoken": [], "clarify": None,
+                        "translation": "500 mg or 650?"}, has_input=False, clarified=False, want_translation=True)
+    assert out["quick_replies"] == ["500", "650"] and out["translation"] == "500 mg or 650?"
+
+
+def test_kannada_partner_line_is_translated_for_a_hinglish_user(client, chat):
+    chat.result = chat_reply({"quick_replies": ["medicine"], "sentences": [], "spoken": [], "clarify": None,
+                              "translation": "Boliye sir, kya chahiye?"})
+    body = client.post("/api/suggest", json={"history": ["ಹೇಳಿ ಸರ್, ಏನು ಬೇಕು?"], "lang": "hinglish",
+                                             "partner_lang": "kn"}).json()
+    assert body["translation"] == "Boliye sir, kya chahiye?" and body["quick_replies"] == ["medicine"]
+    (_url, req, _key), _ = chat.calls[0]
+    assert json.loads(req["messages"][1]["content"])["translate_this"] == "ಹೇಳಿ ಸರ್, ಏನು ಬೇಕು?"
+    assert "The partner speaks Kannada" in req["messages"][0]["content"]
+
+
+def test_reply_to_a_kannada_partner_is_spoken_in_kannada(client, chat):
+    chat.result = chat_reply({"quick_replies": [], "sentences": ["Mujhe dawai chahiye."], "spoken": ["ನನಗೆ ಔಷಧಿ ಬೇಕು."],
+                              "clarify": None, "translation": "not wanted here"})
+    body = client.post("/api/suggest", json={"history": ["ಏನು ಬೇಕು?"], "tiles": ["medicine", "want"],
+                                             "lang": "hinglish", "partner_lang": "kn"}).json()
+    assert body["sentences"] == ["Mujhe dawai chahiye."]
+    assert body["spoken"] == ["ನನಗೆ ಔಷಧಿ ಬೇಕು."] and body["spoken_lang"] == "kn"
+    assert body["translation"] == ""                       # no translation while building a reply
+    (_url, req, _key), _ = chat.calls[0]
+    assert "translate_this" not in json.loads(req["messages"][1]["content"])
+
+
+def test_tamil_partner_works_even_without_tamil_tiles(client, chat):
+    chat.result = chat_reply({"quick_replies": ["yes", "no"], "sentences": [], "spoken": [], "clarify": None,
+                              "translation": "Do you want tea?"})
+    body = client.post("/api/suggest", json={"history": ["டீ வேணுமா?"], "lang": "en", "partner_lang": "ta"}).json()
+    assert body["translation"] == "Do you want tea?" and body["quick_replies"] == ["yes", "no"]
+
+
+def test_partner_language_the_user_understands_is_not_translated(client, chat):
+    chat.result = chat_reply({"quick_replies": [], "sentences": ["I want tea."], "spoken": ["I want tea."],
+                              "clarify": None, "translation": "should be dropped"})
+    # Hinglish user understands English: no translation, but replies are spoken in English.
+    body = client.post("/api/suggest", json={"tiles": ["tea", "want"], "lang": "hinglish", "partner_lang": "en"}).json()
+    assert body["translation"] == ""
+    assert body["spoken_lang"] == "en"
+    prompt = chat.calls[0][0][1]["messages"][0]["content"]
+    assert 'translation: ""' in prompt
+
+
+def test_same_language_partner_has_no_spoken_or_translation(client, chat):
+    chat.result = chat_reply({"quick_replies": [], "sentences": ["Chai chahiye."], "spoken": [], "clarify": None,
+                              "translation": ""})
+    body = client.post("/api/suggest", json={"tiles": ["tea"], "lang": "hinglish", "partner_lang": "hi"}).json()
+    assert body["spoken"] == [] and body["spoken_lang"] is None
+
+
+def test_fallback_speaks_tile_labels_in_the_partners_language(client, chat):
+    chat.result = httpx.ConnectError("down")
+    body = client.post("/api/suggest", json={"tiles": ["medicine", "want"], "lang": "hinglish",
+                                             "partner_lang": "kn"}).json()
+    assert body["fallback"] is True
+    assert body["spoken_lang"] == "kn"
+    assert body["spoken"] == [f"{label(client, 'medicine', 'kn')}, {label(client, 'want', 'kn')}"]
