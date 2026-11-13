@@ -3,6 +3,8 @@
   "name": "Aarav",
   "gender": "male",
   "language": "hinglish",
+  "learning": true,
+  "_learning_note": "true: BRIDGEWORDS proposes new tiles from this person's conversations (stored only in user_data/, git-ignored). The user approves every tile.",
   "tts_model": "timbre-v3.0",
   "voice": "Devansh",
   "_voice_note": "Timbre v3.0 voices speak every language (female: Shivani, Lakshmi, Kalpana, Chetana, Vasudha, Riyaa, Tarika; male: Avinash, Shubham, Prakash, Devansh, Yashraj, Harshad). For timbre-v2.5 add \"voices\": {\"hinglish\": \"Poorvi\", \"hi\": \"Yashvi\", \"en\": \"Pranav\", \"kn\": \"Kavin\", \"mr\": \"Ishaan\"}.",

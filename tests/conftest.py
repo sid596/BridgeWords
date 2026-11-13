@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.main as main
-from app import gnani, llm
+from app import gnani, learning, llm
 
 
 class Recorder:
@@ -41,6 +41,7 @@ def offline(monkeypatch, tmp_path):
     monkeypatch.setenv("GNANI_API_KEY", "test-gnani-key")
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     monkeypatch.setattr(main, "TTS_CACHE_DIR", tmp_path / "tts")
+    monkeypatch.setattr(learning, "USER_DATA", tmp_path / "user_data")
     main._tts_memory.clear()
 
 

@@ -15,6 +15,9 @@ const state = {
   history: [],           // last partner lines, oldest first
   quickReplies: ["yes", "no", "later"],
   speaking: false,       // true while our own voice plays (+300 ms): the mic ignores this
+  editMode: false,
+  hiddenCount: 0,
+  ideas: [],             // AI tile proposals waiting for the user's decision
 };
 
 const MAX_HISTORY = 6;
@@ -74,6 +77,60 @@ async function thinking(fn) {
   }
 }
 
+// ---------- Debug strip (tap the status pill, or open with ?debug=1) ----------
+
+const debug = {
+  on: false,
+  lines: {},
+  level: 0,
+  threshold: 0,
+  frame: 0,
+
+  init() {
+    let saved = null;
+    try {
+      saved = localStorage.getItem("bw-debug");
+    } catch {}
+    this.set(new URLSearchParams(location.search).has("debug") || saved === "1");
+    const toggle = () => this.set(!this.on);
+    $("status").addEventListener("click", toggle);
+    $("status").addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && toggle());
+  },
+
+  set(on) {
+    this.on = on;
+    $("debug").hidden = !on;
+    try {
+      localStorage.setItem("bw-debug", on ? "1" : "0");
+    } catch {}
+    this.render();
+  },
+
+  note(key, text) {
+    this.lines[key] = text;
+    this.render();
+  },
+
+  meter(rms, threshold) {
+    this.level = rms;
+    this.threshold = threshold;
+    if (!this.on || this.frame) return;
+    this.frame = requestAnimationFrame(() => {
+      this.frame = 0;
+      const pct = (v) => `${Math.min(100, Math.sqrt(v / 0.2) * 100).toFixed(1)}%`; // sqrt: quiet sounds visible
+      $("debug-bar").style.width = pct(this.level);
+      $("debug-thr").style.left = pct(this.threshold);
+    });
+  },
+
+  render() {
+    if (!this.on) return;
+    const order = ["heard", "timing", "suggest", "speak", "learn"];
+    const text = order.filter((k) => this.lines[k]).map((k) => this.lines[k]).join("  ·  ");
+    $("debug-text").textContent = text || (mic.on ? "listening…" : "mic off");
+  },
+};
+
 function langCode(lang) {
   return state.languages.find((l) => l.id === lang)?.code || "en-IN";
 }
@@ -131,6 +188,7 @@ function fetchSpeech(text, lang) {
       });
       if (!res.ok) throw new Error(await errorText(res));
       const blob = await res.blob();
+      debug.note("speak", `speak ${res.headers.get("X-Cache") || "?"} ${Math.round(performance.now() - t0)} ms`);
       console.log(
         `[speak] ${res.headers.get("X-Cache") || "?"} ${Math.round(performance.now() - t0)} ms`,
         lang,
@@ -258,11 +316,14 @@ async function loadSymbols(lang) {
   state.categories = data.categories;
   state.tiles = data.tiles;
   state.byId = Object.fromEntries(data.tiles.map((t) => [t.id, t]));
+  state.hiddenCount = data.hidden_count || 0;
+  state.selected = state.selected.filter((k) => k.startsWith(TXT) || state.byId[k]); // drop hidden tiles
   if (!state.categories.includes(state.activeCat)) state.activeCat = state.categories[0];
   document.documentElement.lang = data.lang === "hinglish" ? "hi-Latn" : data.lang;
 
   renderAll();
   prefetchFixed();
+  loadIdeas();
 }
 
 function chipInfo(key) {
@@ -322,6 +383,8 @@ async function onSuggest(clarification = null) {
       })
     );
     if (token !== suggestToken) return; // a newer request superseded this one
+    debug.note("suggest", `suggest ${Math.round(performance.now() - t0)} ms${data.fallback ? " (fallback)" : ""}`);
+    if (typed) learnSoon();
     console.log(
       `[suggest] ${Math.round(performance.now() - t0)} ms (llm ${data.ms} ms)` +
         (data.fallback ? " FALLBACK" : "")
@@ -426,10 +489,15 @@ function renderTabs() {
 
 function renderGrid() {
   const tiles = state.tiles.filter((t) => t.category === state.activeCat && !t.urgent);
-  $("grid").replaceChildren(
+  const grid = $("grid");
+  grid.classList.toggle("editing", state.editMode);
+  grid.replaceChildren(
     ...tiles.map((tile) => {
       const selected = state.selected.includes(tile.id);
-      const b = button("tile" + (selected ? " selected" : ""), tileFace(tile), () => {
+      const face = tileFace(tile);
+      if (state.editMode) face.push(el("span", "tile-x", tile.learned ? "🗑" : "✕"));
+      const b = button("tile" + (selected ? " selected" : "") + (tile.learned ? " learned" : ""), face, () => {
+        if (state.editMode) return hideTile(tile);
         toggleSelected(tile.id);
         renderReplies();
       });
@@ -523,6 +591,7 @@ async function onSpeakCard(btn, text, lang) {
   btn.textContent = "⏹ Stop";
   try {
     await speak(text, lang);
+    logSpoken(text);
   } catch (err) {
     console.warn("[speak] failed:", err.message);
     toast(err.message, 4000);
@@ -651,6 +720,7 @@ const mic = {
     const ms = (frame.length / this.rate) * 1000;
     const cfg = VAD[state.mode] || VAD.listen;
     const threshold = Math.max(cfg.minRms, this.floor * cfg.factor);
+    debug.meter(rms, threshold);
 
     if (!this.recording) {
       this.preRoll.push(frame);
@@ -769,10 +839,13 @@ async function handleSegment(wav, endedAt) {
   state.history = [...state.history, heard.transcript].slice(-MAX_HISTORY);
   $("partner-text").textContent = heard.transcript;
   $("partner-text").title = heard.transcript;
+  debug.note("heard", `heard (${heard.language}): "${heard.transcript}"`);
+  learnSoon(); // the server logged this line for personal-board learning
 
   try {
     const data = await suggestReplies();
     const total = Math.round(performance.now() - endedAt);
+    debug.note("timing", `stt ${sttMs} ms + replies ${total - sttMs} ms = ${total} ms ${total < 3000 ? "✓" : "✗"}`);
     console.log(
       `[listen] "${heard.transcript}" (${heard.language}) | stt ${sttMs} ms | suggest ${total - sttMs} ms | ` +
         `total ${total} ms ${total < 3000 ? "✓" : "✗ over 3 s target"}` +
@@ -788,6 +861,122 @@ function renderMicButton() {
   b.textContent = mic.on ? "⏸ Stop listening" : "🎙 Start listening";
   b.setAttribute("aria-pressed", String(mic.on));
   b.classList.toggle("on", mic.on);
+}
+
+// ======================================================================
+// Personal board learning: the AI proposes new tiles from this person's
+// conversations; the user decides. Tiles never move by themselves.
+// ======================================================================
+
+let learnTimer = null;
+
+// Ask for tile ideas a little after activity settles, so it never competes with live replies.
+// The server only calls the AI once enough new conversation has arrived.
+function learnSoon() {
+  clearTimeout(learnTimer);
+  learnTimer = setTimeout(proposeIdeas, 15000);
+}
+
+function logSpoken(text) {
+  fetch("/api/learn/spoke", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  }).catch(() => {});
+  learnSoon();
+}
+
+async function loadIdeas() {
+  try {
+    const res = await fetch(`/api/learn?lang=${encodeURIComponent(state.lang)}`);
+    if (res.ok) showIdeas((await res.json()).pending);
+  } catch {}
+}
+
+async function proposeIdeas() {
+  try {
+    const t0 = performance.now();
+    const data = await postJSON(`/api/learn/propose?lang=${encodeURIComponent(state.lang)}`, {});
+    debug.note("learn", `ideas ${data.pending.length} (${Math.round(performance.now() - t0)} ms)`);
+    showIdeas(data.pending);
+  } catch (err) {
+    console.warn("[learn] failed:", err.message);
+  }
+}
+
+function showIdeas(ideas) {
+  const fresh = ideas.some((i) => !state.ideas.find((o) => o.id === i.id));
+  state.ideas = ideas;
+  const box = $("ideas");
+  box.hidden = ideas.length === 0;
+  if (!ideas.length) return box.replaceChildren();
+  box.replaceChildren(
+    el("span", "ideas-title", "✨ New tile ideas"),
+    ...ideas.map((idea) =>
+      el("div", "idea", [
+        el("span", "emoji", idea.emoji),
+        el("span", "idea-text", [el("strong", null, idea.label), el("small", null, idea.reason)]),
+        button("idea-add", "+ Add", () => decideIdea(idea, true)),
+        button("idea-no", "✕", () => decideIdea(idea, false)),
+      ])
+    )
+  );
+  if (fresh) {
+    box.classList.remove("flash");
+    void box.offsetWidth;
+    box.classList.add("flash");
+  }
+}
+
+async function decideIdea(idea, accept) {
+  try {
+    await postJSON(accept ? "/api/learn/accept" : "/api/learn/reject", { id: idea.id });
+  } catch (err) {
+    return toast(err.message);
+  }
+  showIdeas(state.ideas.filter((i) => i.id !== idea.id));
+  if (accept) {
+    await loadSymbols(state.lang);
+    state.activeCat = state.categories[0]; // "My tiles"
+    renderTabs();
+    renderGrid();
+    toast(`${idea.emoji} ${idea.label} added to My tiles`);
+  }
+}
+
+// ---------- Edit mode: hide tiles this person never uses ----------
+
+function setEditMode(on) {
+  state.editMode = on;
+  $("edit-bar").hidden = !on;
+  $("edit-btn").hidden = on;
+  $("unhide-btn").hidden = !on || state.hiddenCount === 0;
+  $("unhide-btn").textContent = `↩ Show hidden (${state.hiddenCount})`;
+  renderGrid();
+}
+
+async function hideTile(tile) {
+  if (tile.learned && !confirm(`Remove ${tile.label} from My tiles?`)) return;
+  try {
+    await postJSON("/api/tiles/hide", { id: tile.id });
+  } catch (err) {
+    return toast(err.message);
+  }
+  await loadSymbols(state.lang);
+  setEditMode(true);
+}
+
+async function unhideAll() {
+  await postJSON("/api/tiles/unhide", {}).catch((err) => toast(err.message));
+  await loadSymbols(state.lang);
+  setEditMode(true);
+}
+
+async function forgetConversations() {
+  if (!confirm("Forget all saved conversations? Tiles you added stay.")) return;
+  await postJSON("/api/learn/forget", {}).catch((err) => toast(err.message));
+  showIdeas([]);
+  toast("Conversation history forgotten");
 }
 
 // ======================================================================
@@ -817,6 +1006,11 @@ function init() {
     if (e.key === "Enter") onSuggest();
   });
   $("urgent-overlay").addEventListener("click", () => ($("urgent-overlay").hidden = true));
+  $("edit-btn").addEventListener("click", () => setEditMode(true));
+  $("edit-done").addEventListener("click", () => setEditMode(false));
+  $("unhide-btn").addEventListener("click", unhideAll);
+  $("forget-btn").addEventListener("click", forgetConversations);
+  debug.init();
 
   refreshStatus();
   loadSymbols().catch((err) => {

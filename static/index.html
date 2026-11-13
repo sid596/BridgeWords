@@ -28,11 +28,20 @@
       <span id="partner-text" class="partner-text">…</span>
     </div>
 
-    <span id="status" class="status">ready</span>
+    <span id="status" class="status" role="button" tabindex="0" title="Tap for timings">ready</span>
   </header>
 
   <div id="phone-banner" class="phone-banner" hidden>
     📞 Put the call on speaker next to the tablet
+  </div>
+
+  <!-- Debug strip: tap the status pill (or open with ?debug=1) to toggle. -->
+  <div id="debug" class="debug" hidden>
+    <div class="debug-level" title="Mic level (bar) and speech threshold (line)">
+      <div id="debug-bar" class="debug-bar"></div>
+      <div id="debug-thr" class="debug-thr"></div>
+    </div>
+    <div id="debug-text" class="debug-text">mic off</div>
   </div>
 
   <section class="replies" aria-label="Suggested replies">
@@ -41,7 +50,17 @@
 
   <main class="board-wrap">
     <section class="board" aria-label="Symbol board">
-      <nav id="tabs" class="tabs" role="tablist"></nav>
+      <div id="ideas" class="ideas" hidden></div>
+      <div class="tabs-row">
+        <nav id="tabs" class="tabs" role="tablist"></nav>
+        <button type="button" id="edit-btn" class="edit-btn">✏️ Edit</button>
+      </div>
+      <div id="edit-bar" class="edit-bar" hidden>
+        <span class="edit-hint">Tap a tile to hide it. Your own tiles are removed.</span>
+        <button type="button" id="unhide-btn" class="btn btn-secondary" hidden>↩ Show hidden</button>
+        <button type="button" id="forget-btn" class="btn btn-secondary">🧹 Forget conversations</button>
+        <button type="button" id="edit-done" class="btn btn-primary">Done</button>
+      </div>
       <div id="grid" class="grid"></div>
     </section>
 

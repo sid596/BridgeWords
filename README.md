@@ -10,6 +10,7 @@ Many people with cerebral palsy, motor neurone disease or aphasia understand eve
 3. **Builds full sentences from a few taps**: Khichdi + Soft food → *"Mujhe khichdi chahiye, thodi soft."*
 4. **Asks instead of guessing** when taps are ambiguous: Pain + Tomorrow → *"Pain now, or about tomorrow's doctor visit?"*
 5. **Speaks only what the user approves**, in their language and their own voice (Timbre).
+6. **Learns the person's life.** The board starts with tiles most people need. Then it proposes tiles that are only theirs: 🪂 a parachute for a skydiver, 🍝 pasta instead of khichdi, 🩼 their crutch.
 
 > Prototype. All data is synthetic: Aarav is a fictional persona with a fictional address. It has not yet been tested with AAC users.
 
@@ -20,6 +21,17 @@ Many people with cerebral palsy, motor neurone disease or aphasia understand eve
 - The AI is told: *never add facts, feelings or requests the user did not select; prefer short sentences; ask when unsure*. Its JSON is validated on the server. On any AI error the user gets their tapped words joined together, so they can always speak.
 - Every suggestion row also offers **Something else** and **Wait**, so the user is never boxed in.
 - **Half-duplex:** the mic ignores everything while the tablet is speaking, plus 300 ms, so phone mode never hears itself.
+
+## A board that learns the person
+
+Everybody's life is different, and a fixed board can't know that this user skydives, eats pasta or never goes anywhere without a crutch. BRIDGEWORDS keeps a private log of the conversation: what partners said, what the user typed (the strongest signal, because typing is slow for them), and what they chose to speak. Every few new lines it asks the AI: *what does this person talk about often that the board lacks?*
+
+- **The AI proposes, the user decides.** Ideas appear as "✨ New tile ideas: 🪂 Parachute [+ Add] [✕]". Nothing is added by itself, which is the same principle as Speak.
+- **No invented interests.** Each idea must quote at least 2 real lines from the log, or something the user typed. The server checks that the quotes exist, and drops anything already on the board, rejected before, or private (phone numbers, addresses, money).
+- **Tiles never move on their own.** AAC users rely on motor memory, so new tiles go into a **My tiles** tab. **✏️ Edit** lets the user hide starter tiles they never use (khichdi) and remove their own. Urgent tiles can't be hidden.
+- **Private and local.** The log and learned tiles live in `user_data/`, which is git-ignored and never committed. **🧹 Forget conversations** wipes the log. Set `"learning": false` in `data/profile.json` to turn learning off.
+
+Tested on a synthetic week of conversation: it proposed 🪂 Parachute, 🩼 Crutch (बैसाखी) and 🍝 Pasta, and ignored a phone number, an address and a one-off zoo trip.
 
 ## Run it
 
@@ -57,15 +69,15 @@ Browsers only allow the mic on `https` or `localhost`. Run `ngrok http 8000` in 
 - **Listen mode:** tap **🎙 Start listening**. When the partner stops talking, the top row updates with replies to what they said. The status pill shows *listening → hearing → thinking → ready*.
 - **Phone mode:** the same, for a call on speaker next to the tablet. The mic is a bit more sensitive in this mode.
 - **Language:** Hinglish, हिन्दी, English, ಕನ್ನಡ, मराठी. This changes the tile labels, the suggestions, the listening languages and the voice.
-- **Console** (Cmd+Option+J): timings for every step, e.g. `[listen] … stt 820 ms | suggest 1300 ms | total 2120 ms ✓`.
+- **Timings:** tap the status pill (or open `/?debug=1`) for an on-screen strip with the mic level, the speech threshold, what Prisma heard, and the time for each step. It works on a tablet without dev tools. The console (Cmd+Option+J) has the same details.
 
 ## Editing the content (no code needed)
 
 | File | What's in it |
 |---|---|
-| `data/symbols.csv` | Tiles: `id, category, label_en, label_hi, label_kn, label_mr, emoji, notes` |
+| `data/symbols.csv` | Starter tiles: `id, category, label_en, label_hinglish, label_hi, label_kn, label_mr, emoji, notes` |
 | `data/phrases.json` | Fixed phrases for Help, Hard to breathe and Wait, per language |
-| `data/profile.json` | The user's name, gender (for grammar), default language, Timbre model and voice, saved address, personal meanings (e.g. "the heart sometimes means pain") |
+| `data/profile.json` | The user's name, gender (for grammar), default language, learning on/off, Timbre model and voice, saved address, personal meanings (e.g. "the heart sometimes means pain") |
 
 - Change labels freely, but **never change an `id`**.
 - In Excel, save as **CSV UTF-8**. Plain CSV breaks Kannada and Devanagari text.
@@ -92,7 +104,7 @@ user taps Speak ──► /api/speak ──► Timbre (cached) ──► speaker
 urgent tile ──────────────────────► pre-fetched audio ─► speaker   (no AI)
 ```
 
-Code: `app/main.py` (API), `app/llm.py` (prompt + validation), `app/gnani.py` (Prisma/Timbre adapters, no automatic retries), `static/` (one page, vanilla JS, no build step).
+Code: `app/main.py` (API), `app/llm.py` (prompt + validation), `app/learning.py` (personal board learning), `app/gnani.py` (Prisma/Timbre adapters, no automatic retries), `static/` (one page, vanilla JS, no build step).
 
 ## Tests
 
@@ -100,7 +112,7 @@ Code: `app/main.py` (API), `app/llm.py` (prompt + validation), `app/gnani.py` (P
 python -m pytest -q
 ```
 
-46 tests, all offline: Gnani and OpenAI are mocked, and a guard fails any test that tries to reach the network. They cover suggestion JSON validation, the fallback for every kind of AI failure, urgent tiles (fixed phrase, no AI, cached), TTS caching and errors, and the listening endpoint.
+67 tests, all offline: Gnani and OpenAI are mocked, and a guard fails any test that tries to reach the network. They cover suggestion JSON validation, the fallback for every kind of AI failure, urgent tiles (fixed phrase, no AI, cached), TTS caching and errors, the listening endpoint, and board learning (proposals never auto-add, evidence checks, reject/hide/forget, privacy switch).
 
 ## Measured latency (Mac, home Wi-Fi, warm)
 

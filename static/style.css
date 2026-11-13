@@ -449,3 +449,114 @@ body.is-speaking .status { background: var(--selected); color: var(--ink); }
   text-align: center;
 }
 .phone-banner[hidden] { display: none; }
+
+/* ---------- Personal board: ideas, My tiles, edit mode ---------- */
+[hidden] { display: none !important; }
+
+.tabs-row { display: flex; gap: 8px; align-items: flex-start; }
+.tabs-row .tabs { flex: 1; min-width: 0; }
+.edit-btn {
+  flex: 0 0 auto;
+  min-height: 56px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 2px dashed var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.edit-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap);
+  align-items: center;
+  padding: 10px;
+  margin-bottom: 10px;
+  border-radius: var(--radius);
+  background: #fff4d6;
+  border: 2px dashed #e0b84a;
+}
+.edit-hint { flex: 1 1 220px; font-weight: 600; }
+.edit-bar .btn { min-height: 56px; font-size: 17px; }
+
+.tile { position: relative; }
+.tile.learned { background: #f1ecff; }
+.grid.editing .tile { border: 3px dashed #e0b84a; }
+.tile-x {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ideas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap);
+  align-items: center;
+  padding: 10px;
+  margin-bottom: 10px;
+  border-radius: var(--radius);
+  background: #f1ecff;
+  border: 2px solid #b9a5f0;
+}
+.ideas.flash { animation: flash 900ms ease; }
+.ideas-title { font-weight: 800; color: #5b3fc4; }
+.idea {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 14px;
+  background: var(--surface);
+}
+.idea .emoji { font-size: 34px; }
+.idea-text { display: flex; flex-direction: column; max-width: 220px; }
+.idea-text small { color: var(--muted); font-size: 13px; }
+.idea-add, .idea-no {
+  min-height: 56px;
+  min-width: 56px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 0;
+  font-weight: 700;
+}
+.idea-add { background: #5b3fc4; color: #fff; }
+.idea-no { background: var(--bg); }
+
+/* ---------- Debug strip ---------- */
+.status { cursor: pointer; }
+.debug {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 16px;
+  background: #111;
+  color: #9ef0b5;
+  font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.debug-level {
+  position: relative;
+  flex: 0 0 140px;
+  height: 12px;
+  border-radius: 6px;
+  background: #333;
+  overflow: hidden;
+}
+.debug-bar { height: 100%; width: 0; background: #3ddc84; transition: width 60ms linear; }
+.debug-thr { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5252; left: 0; }
+.debug-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 720px) {
+  .debug { flex-wrap: wrap; }
+  .debug-text { white-space: normal; }
+}

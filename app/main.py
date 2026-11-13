@@ -4,6 +4,8 @@ GET  /api/symbols   tiles in the active language (+ fixed phrases for urgent/Wai
 POST /api/speak     Gnani Timbre, cached by text + language + model + voice
 POST /api/suggest   LLM suggestions (quick replies, sentences or a clarifying question)
 POST /api/listen    Gnani Prisma transcription of the partner's speech
+/api/learn/*        personal board learning (AI proposes new tiles; the user decides)
+/api/tiles/*        hide / restore tiles
 """
 import csv
 import hashlib
@@ -21,7 +23,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import gnani, llm
+from app import gnani, learning, llm
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -38,7 +40,7 @@ log = logging.getLogger("bridgewords")
 # tts: Timbre language ("hi-en" is Hinglish). browser: device-voice fallback for urgent tiles.
 # v25_voice: per-language voice, used only if profile.json selects timbre-v2.5.
 LANGUAGES = {
-    "hinglish": {"name": "Hinglish", "label_col": "label_en", "stt": "hi-IN,en-IN", "tts": "hi-en",
+    "hinglish": {"name": "Hinglish", "label_col": "label_hinglish", "stt": "hi-IN,en-IN", "tts": "hi-en",
                  "browser": "hi-IN", "v25_voice": "Poorvi",
                  "llm": "Hinglish (Hindi-English mix written in Roman script, the way people text in India)"},
     "hi": {"name": "हिन्दी", "label_col": "label_hi", "stt": "hi-IN,en-IN", "tts": "hi-IN",
@@ -112,7 +114,19 @@ def check_lang(lang: str | None) -> str:
 
 
 def label_for(row: dict, lang: str) -> str:
-    return row[LANGUAGES[lang]["label_col"]] or row["label_en"]
+    return row.get(LANGUAGES[lang]["label_col"]) or row["label_en"]
+
+
+def board_rows() -> list[dict]:
+    """Starter tiles + the user's learned tiles, minus hidden ones. Urgent tiles can't be hidden."""
+    hidden = learning.hidden_ids()
+    rows = [r for r in load_symbols() if r["id"] not in hidden or r["id"] in URGENT_IDS]
+    known = {r["id"] for r in load_symbols()}
+    return rows + [r for r in learning.learned_rows() if r["id"] not in known]
+
+
+def learning_enabled() -> bool:
+    return load_profile().get("learning", True) is not False
 
 
 def tts_voice(lang: str) -> tuple[str, str]:
@@ -133,7 +147,7 @@ def get_symbols(lang: str | None = None):
     phrases = load_json("phrases.json")
 
     tiles, categories = [], []
-    for row in load_symbols():
+    for row in board_rows():
         if row["category"] not in categories:
             categories.append(row["category"])
         tile = {
@@ -143,17 +157,23 @@ def get_symbols(lang: str | None = None):
             "label_en": row["label_en"],
             "emoji": row["emoji"],
             "urgent": row["id"] in URGENT_IDS,
+            "learned": row["category"] == learning.MY_TILES,
         }
         phrase = phrases.get(row["id"])
         if isinstance(phrase, dict):
             tile["say"] = phrase.get(lang) or tile["label"]
         tiles.append(tile)
 
+    if learning.MY_TILES in categories:  # the user's own tiles come first
+        categories.remove(learning.MY_TILES)
+        categories.insert(0, learning.MY_TILES)
+
     return {
         "lang": lang,
         "languages": [{"id": k, "name": v["name"], "code": v["browser"]} for k, v in LANGUAGES.items()],
         "categories": categories,
         "tiles": tiles,
+        "hidden_count": len(learning.hidden_ids() - set(URGENT_IDS)),
     }
 
 
@@ -267,7 +287,7 @@ def fallback(selected: list[dict], typed: str) -> dict:
 @app.post("/api/suggest")
 async def suggest(req: SuggestRequest):
     lang = check_lang(req.lang)
-    rows = load_symbols()
+    rows = board_rows()
     by_id = {r["id"]: r for r in rows}
     selected = [{"id": t, "label": label_for(by_id[t], lang), "meaning": by_id[t]["label_en"]}
                 for t in dict.fromkeys(req.tiles) if t in by_id]
@@ -276,6 +296,8 @@ async def suggest(req: SuggestRequest):
 
     if not selected and not typed and not history:
         return {"quick_replies": [], "sentences": [], "clarify": None, "fallback": False}
+    if typed and learning_enabled():
+        learning.add_event("typed", typed)  # words the board lacks are the best learning signal
 
     t0 = time.perf_counter()
     try:
@@ -319,7 +341,98 @@ def listen(audio: UploadFile = File(...), lang: str | None = Form(None)):
     transcript = " ".join(result["transcript"].split())
     language = result.get("detected_language_code") or codes.split(",")[0]
     log.info("STT lang=%s detected=%s chars=%d took=%dms", codes, language, len(transcript), ms)
+    if transcript and learning_enabled():
+        learning.add_event("partner", transcript)
     return {"transcript": transcript, "language": language, "ms": ms}
+
+
+# ---------- Personal board learning ----------
+
+class SpokeEvent(BaseModel):
+    text: str = Field(min_length=1, max_length=MAX_SPEAK_CHARS)
+
+
+class TileRef(BaseModel):
+    id: str = Field(min_length=1, max_length=40)
+
+
+def pending_view(lang: str) -> list[dict]:
+    return [{"id": p["id"], "emoji": p["emoji"], "label": label_for(p, lang), "reason": p.get("reason", "")}
+            for p in learning.load()["pending"]]
+
+
+@app.post("/api/learn/spoke")
+def learn_spoke(ev: SpokeEvent):
+    """The user approved and spoke this sentence."""
+    if learning_enabled():
+        learning.add_event("spoke", ev.text)
+    return {"ok": True}
+
+
+@app.get("/api/learn")
+def learn_status(lang: str | None = None):
+    lang = check_lang(lang)
+    store = learning.load()
+    return {"enabled": learning_enabled(), "pending": pending_view(lang),
+            "log_entries": len(store["events"]), "learned_tiles": len(store["tiles"])}
+
+
+@app.post("/api/learn/propose")
+async def learn_propose(lang: str | None = None, force: bool = False):
+    """Ask the AI for new tile ideas (only if enough new conversation arrived). Never adds tiles itself."""
+    lang = check_lang(lang)
+    if not learning_enabled():
+        return {"pending": []}
+    key = os.environ.get("OPENAI_API_KEY")
+    if key:
+        try:
+            await learning.propose(
+                profile=load_profile(),
+                board=load_symbols(),
+                post_chat=llm.post_chat,
+                model=os.environ.get("LLM_MODEL", "gpt-5.4-mini"),
+                base=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
+                key=key,
+                force=force,
+            )
+        except Exception as e:  # learning is a background nicety: never break the app
+            log.warning("learning failed (%s): %s", type(e).__name__, str(e)[:200])
+    return {"pending": pending_view(lang)}
+
+
+@app.post("/api/learn/accept")
+def learn_accept(ref: TileRef):
+    tile = learning.accept(ref.id)
+    if not tile:
+        raise HTTPException(404, "No such tile idea.")
+    return {"ok": True}
+
+
+@app.post("/api/learn/reject")
+def learn_reject(ref: TileRef):
+    learning.reject(ref.id)
+    return {"ok": True}
+
+
+@app.post("/api/learn/forget")
+def learn_forget():
+    """Wipe the conversation log and pending ideas (accepted tiles stay)."""
+    learning.forget()
+    return {"ok": True}
+
+
+@app.post("/api/tiles/hide")
+def tiles_hide(ref: TileRef):
+    if ref.id in URGENT_IDS:
+        raise HTTPException(400, "Urgent tiles can't be hidden.")
+    learning.hide(ref.id)
+    return {"ok": True}
+
+
+@app.post("/api/tiles/unhide")
+def tiles_unhide():
+    learning.unhide_all()
+    return {"ok": True}
 
 
 # ---------- Page ----------
