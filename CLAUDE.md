@@ -31,6 +31,8 @@ This is an entry for Gnani AI's Great Indian AI Internship Challenge. **Deadline
 
 Timbre voices that HMH used per language: Hindi `Yashvi`, Hinglish `Poorvi`, English `Pranav`, Marathi `Ishaan`, Kannada `Kavin`. Language codes: `hi-IN`, `en-IN`, `kn-IN`, `mr-IN`.
 
+**Updated 2026-11-13 (docs re-checked):** we use **Timbre v3.0** (`timbre-v3.0`). Its 13 voices speak every language, so the user keeps one voice (set in `data/profile.json`, default `Devansh`). Hinglish TTS uses language `hi-en`. Prisma v3.0 gets language lists (`hi-IN,en-IN`, `kn-IN,en-IN`, …) with `format=codemix`. Prisma does **not** accept WebM, so the browser records PCM and sends 16 kHz WAV instead of using MediaRecorder output. Fixed phrases (urgent tiles + Wait) live in `data/phrases.json`.
+
 ## Environment (`.env`, git-ignored; commit `.env.example` with empty values)
 
 ```

@@ -591,16 +591,24 @@ const mic = {
       toast(`Microphone blocked: ${err.message}`, 5000);
       return;
     }
-    this.ctx = new AudioContext();
-    this.rate = this.ctx.sampleRate;
-    const url = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "text/javascript" }));
-    await this.ctx.audioWorklet.addModule(url);
-    URL.revokeObjectURL(url);
-    const src = this.ctx.createMediaStreamSource(this.stream);
-    this.node = new AudioWorkletNode(this.ctx, "tap");
-    this.node.port.onmessage = (e) => this.onFrame(e.data);
-    src.connect(this.node);
-    this.node.connect(this.ctx.destination); // outputs silence; keeps the node running
+    try {
+      this.ctx = new AudioContext();
+      await this.ctx.resume(); // Safari starts it suspended after the await above
+      this.rate = this.ctx.sampleRate;
+      const url = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "text/javascript" }));
+      await this.ctx.audioWorklet.addModule(url);
+      URL.revokeObjectURL(url);
+      const src = this.ctx.createMediaStreamSource(this.stream);
+      this.node = new AudioWorkletNode(this.ctx, "tap");
+      this.node.port.onmessage = (e) => this.onFrame(e.data);
+      src.connect(this.node);
+      this.node.connect(this.ctx.destination); // outputs silence; keeps the node running
+    } catch (err) {
+      console.error("[listen] audio setup failed:", err);
+      toast(`Could not start listening: ${err.message}`, 5000);
+      this.stop();
+      return;
+    }
     this.on = true;
     this.reset();
     renderMicButton();

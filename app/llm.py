@@ -172,6 +172,22 @@ def validate(raw: object, *, has_input: bool, clarified: bool) -> dict:
     return {"quick_replies": [], "sentences": sentences, "clarify": None}
 
 
+_client: httpx.AsyncClient | None = None
+
+
+async def post_chat(url: str, body: dict, key: str) -> tuple[int, object]:
+    """The only network call in this module (tests replace it).
+    One shared client keeps the HTTPS connection warm, saving a TLS handshake per suggestion."""
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=5.0))
+    response = await _client.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
+    try:
+        return response.status_code, response.json()
+    except ValueError:
+        return response.status_code, None
+
+
 async def suggest(*, profile, language_desc, catalogue, history, selected, typed, clarification) -> dict:
     """Call the LLM and return validated suggestions. Raises on any failure."""
     key = os.environ.get("OPENAI_API_KEY")
@@ -194,18 +210,13 @@ async def suggest(*, profile, language_desc, catalogue, history, selected, typed
         body["reasoning_effort"] = effort
 
     t0 = time.perf_counter()
-    async with httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=5.0)) as client:
-        response = await client.post(f"{base}/chat/completions", json=body,
-                                     headers={"Authorization": f"Bearer {key}"})
-    if response.status_code != 200:
+    status, payload = await post_chat(f"{base}/chat/completions", body, key)
+    if status != 200:
         # Log OpenAI's error message (never contains our key), not the request.
-        try:
-            detail = response.json().get("error", {}).get("message", "")[:200]
-        except ValueError:
-            detail = ""
-        raise ValueError(f"LLM HTTP {response.status_code}: {detail}")
+        detail = (payload.get("error") or {}).get("message", "")[:200] if isinstance(payload, dict) else ""
+        raise ValueError(f"LLM HTTP {status}: {detail}")
 
-    message = response.json()["choices"][0]["message"]
+    message = payload["choices"][0]["message"]
     if message.get("refusal"):
         raise ValueError("LLM refused")
     raw = json.loads(message.get("content") or "")
