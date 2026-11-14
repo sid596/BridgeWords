@@ -176,3 +176,57 @@ def test_manifest_and_service_worker_are_served_from_the_root(client):
     sw = client.get("/sw.js")
     assert sw.status_code == 200 and "javascript" in sw.headers["content-type"]
     assert 'req.method !== "GET"' in sw.text     # speech and suggestions are never served from cache
+
+
+# ---------- My voice (cloning) ----------
+
+EMB = {"embedding": "abc123", "shape": [1, 768], "dtype": "torch.bfloat16"}
+
+
+@pytest.fixture
+def cloning(monkeypatch):
+    from app import gnani
+    from tests.conftest import Recorder
+    clone = Recorder(EMB)
+    cloned_tts = Recorder(lambda text, emb: b"RIFF-cloned-" + text.encode())
+    monkeypatch.setattr(gnani, "clone_embedding", clone)
+    monkeypatch.setattr(gnani, "synthesize_cloned", cloned_tts)
+    return clone, cloned_tts
+
+
+def test_cloning_requires_consent(client, cloning):
+    clone, _ = cloning
+    r = client.post("/api/voice/clone", files={"audio": ("v.wav", WAV, "audio/wav")}, data={"consent": "false"})
+    assert r.status_code == 400 and "permission" in r.json()["detail"]
+    assert clone.calls == []
+
+
+def test_cloned_voice_is_used_for_speech_and_can_be_switched_off(client, cloning, tts):
+    clone, cloned_tts = cloning
+    r = client.post("/api/voice/clone", files={"audio": ("v.wav", WAV, "audio/wav")}, data={"consent": "true"})
+    assert r.json() == {**r.json(), "cloned": True, "enabled": True}
+
+    a = client.post("/api/speak", json={"text": "Mujhe paani chahiye.", "lang": "hinglish"})
+    assert a.content.startswith(b"RIFF-cloned-") and len(cloned_tts.calls) == 1 and tts.calls == []
+    assert cloned_tts.calls[0][0][1] == EMB
+
+    client.post("/api/voice/use", json={"enabled": False})
+    b = client.post("/api/speak", json={"text": "Mujhe paani chahiye.", "lang": "hinglish"})
+    assert b.headers["x-cache"] == "miss" and len(tts.calls) == 1     # standard voice: a different cached phrase
+
+
+def test_the_recording_itself_is_never_stored(client, cloning):
+    import app.main as main
+    client.post("/api/voice/clone", files={"audio": ("v.wav", b"RIFF" + b"secret-audio" * 50, "audio/wav")},
+                data={"consent": "true"})
+    stored = main.voice_path().read_bytes()
+    assert b"secret-audio" not in stored
+    assert [p.name for p in main.voice_path().parent.iterdir()] == ["voice.json"]
+
+
+def test_deleting_the_voice_goes_back_to_the_standard_voice(client, cloning, tts):
+    client.post("/api/voice/clone", files={"audio": ("v.wav", WAV, "audio/wav")}, data={"consent": "true"})
+    assert client.post("/api/voice/delete").json()["cloned"] is False
+    client.post("/api/speak", json={"text": "Haan", "lang": "hi"})
+    assert len(tts.calls) == 1
+    assert client.post("/api/voice/use", json={"enabled": True}).status_code == 400

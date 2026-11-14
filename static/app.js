@@ -1166,6 +1166,7 @@ function applyUI() {
   renderMicButton();
   refreshStatus();
   $("scan-hint").textContent = t("scan_choose");
+  if (typeof voice !== "undefined") voice.render();
 }
 
 function renderPartnerPicker() {
@@ -1373,6 +1374,147 @@ const scan = {
 };
 
 // ======================================================================
+// My voice: clone a voice from 5-30 s of audio (Gnani voice cloning).
+// Only the voice embedding is kept on this device; the recording is not saved.
+// ======================================================================
+
+const voice = {
+  sample: null,      // Blob ready to upload
+  sampleMs: 0,
+  rec: null,         // {ctx, stream, node, chunks, rate, started, timer}
+  status: { cloned: false, enabled: false },
+
+  async load() {
+    try {
+      const res = await fetch("/api/voice");
+      if (res.ok) this.status = await res.json();
+    } catch {}
+    this.render();
+  },
+
+  render() {
+    const st = this.status;
+    $("voice-status").textContent = st.cloned && st.enabled ? t("voice_using_cloned") : t("voice_using_standard");
+    $("voice-use").hidden = !st.cloned;
+    $("voice-delete").hidden = !st.cloned;
+    document.querySelectorAll("#voice-use button").forEach((b) =>
+      b.classList.toggle("active", (b.dataset.use === "1") === !!st.enabled));
+    const recording = !!this.rec;
+    $("voice-record").classList.toggle("recording", recording);
+    $("voice-record-label").textContent = recording ? `${t("stop_recording")} · ${Math.floor((performance.now() - this.rec.started) / 1000)} s` : t("record_sample");
+    $("voice-sample").hidden = !this.sample;
+    if (this.sample) $("voice-sample").textContent = `✓ ${(this.sampleMs / 1000).toFixed(0)} s`;
+    $("voice-create").disabled = !this.sample || !$("voice-consent").checked;
+  },
+
+  async startRecording() {
+    if (mic.on) mic.stop(); // one microphone user at a time
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, noiseSuppression: true } });
+      const ctx = new AudioContext();
+      await ctx.resume();
+      const url = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "text/javascript" }));
+      await ctx.audioWorklet.addModule(url);
+      URL.revokeObjectURL(url);
+      const node = new AudioWorkletNode(ctx, "tap");
+      const chunks = [];
+      node.port.onmessage = (e) => chunks.push(e.data);
+      ctx.createMediaStreamSource(stream).connect(node);
+      node.connect(ctx.destination);
+      this.rec = { ctx, stream, node, chunks, rate: ctx.sampleRate, started: performance.now() };
+      this.rec.timer = setInterval(() => {
+        this.render();
+        if (performance.now() - this.rec.started >= 30000) this.stopRecording(); // Gnani takes up to 30 s
+      }, 250);
+      this.sample = null;
+      this.render();
+    } catch (err) {
+      toast(`Microphone: ${err.message}`, 4000);
+    }
+  },
+
+  stopRecording() {
+    const r = this.rec;
+    if (!r) return;
+    clearInterval(r.timer);
+    r.node.disconnect();
+    r.stream.getTracks().forEach((tr) => tr.stop());
+    r.ctx.close();
+    this.rec = null;
+    const ms = performance.now() - r.started;
+    if (ms < 5000) {
+      toast(t("voice_too_short"));
+    } else {
+      this.sample = encodeWav(r.chunks, r.rate, 16000);
+      this.sampleMs = ms;
+    }
+    this.render();
+  },
+
+  async create() {
+    if (!this.sample || !$("voice-consent").checked) return;
+    const form = new FormData();
+    form.append("audio", this.sample, this.sample.name || "voice.wav");
+    form.append("consent", "true");
+    toast(t("voice_working"), 10000);
+    try {
+      const res = await fetch("/api/voice/clone", { method: "POST", body: form });
+      if (!res.ok) throw new Error(await errorText(res));
+      this.status = await res.json();
+      this.sample = null;
+      toast(t("voice_created"));
+      this.voiceChanged();
+    } catch (err) {
+      toast(err.message, 5000);
+    }
+    this.render();
+  },
+
+  async use(enabled) {
+    try {
+      this.status = await postJSON("/api/voice/use", { enabled });
+      this.voiceChanged();
+    } catch (err) {
+      toast(err.message);
+    }
+    this.render();
+  },
+
+  async remove() {
+    if (!confirm(`${t("delete_voice")}?`)) return;
+    this.status = await postJSON("/api/voice/delete", {}).catch(() => this.status);
+    toast(t("voice_deleted"));
+    this.voiceChanged();
+    this.render();
+  },
+
+  // Audio cached in the browser was made with the old voice.
+  voiceChanged() {
+    for (const p of audioCache.values()) p.then((u) => URL.revokeObjectURL(u)).catch(() => {});
+    audioCache.clear();
+    prefetchFixed();
+  },
+
+  init() {
+    $("voice-record").addEventListener("click", () => (this.rec ? this.stopRecording() : this.startRecording()));
+    $("voice-file").addEventListener("change", (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      this.sample = f;
+      this.sampleMs = 0;
+      this.render();
+      $("voice-sample").textContent = `✓ ${f.name}`;
+    });
+    $("voice-consent").addEventListener("change", () => this.render());
+    $("voice-create").addEventListener("click", () => this.create());
+    document.querySelectorAll("#voice-use button").forEach((b) =>
+      b.addEventListener("click", () => this.use(b.dataset.use === "1")));
+    $("voice-delete").addEventListener("click", () => this.remove());
+    this.load();
+  },
+};
+
+// ======================================================================
 // Demo mode (?demo=1): type what the partner said instead of speaking it,
 // and load a synthetic week of conversation to show board learning.
 // ======================================================================
@@ -1454,6 +1596,7 @@ function init() {
   wireSegments();
   scan.init();
   initDemo();
+  voice.init();
   $("lang-picker").addEventListener("change", (e) => {
     loadSymbols(e.target.value).catch((err) => toast(err.message));
   });

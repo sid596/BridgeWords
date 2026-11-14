@@ -177,6 +177,24 @@
         <small data-i18n="scanning_hint">Highlights groups, then buttons, one at a time. Press a switch (Space or Enter) or tap anywhere to choose.</small>
       </div>
 
+      <div class="field" id="voice-field">
+        <span data-i18n="my_voice">My voice</span>
+        <div id="voice-status" class="voice-status"></div>
+        <div class="voice-row">
+          <button type="button" id="voice-record" class="btn btn-quiet"><svg class="icon"><use href="#i-mic"/></svg><span id="voice-record-label">Record a sample</span></button>
+          <label class="btn btn-quiet file-btn"><span data-i18n="choose_file">Choose a file</span><input type="file" id="voice-file" accept="audio/*" hidden></label>
+        </div>
+        <div id="voice-sample" class="voice-sample" hidden></div>
+        <label class="consent"><input type="checkbox" id="voice-consent"><span data-i18n="consent">This is my voice, or I have the speaker's permission to use it.</span></label>
+        <button type="button" id="voice-create" class="btn btn-primary" disabled data-i18n="create_voice">Create my voice</button>
+        <div class="segmented" role="group" id="voice-use" hidden>
+          <button type="button" data-use="1" data-i18n="cloned_voice">My voice</button>
+          <button type="button" data-use="0" data-i18n="standard_voice">Standard voice</button>
+        </div>
+        <button type="button" id="voice-delete" class="btn btn-quiet" hidden data-i18n="delete_voice">Delete my voice</button>
+        <small data-i18n="voice_hint">5 to 30 seconds of one person speaking clearly in a quiet room. Only a voice fingerprint is kept on this device; the recording is not saved.</small>
+      </div>
+
       <div class="field field-actions">
         <button type="button" id="edit-btn" class="btn btn-quiet" data-i18n="edit">Edit board</button>
         <button type="button" id="forget-btn" class="btn btn-quiet" data-i18n="forget">Forget conversations</button>

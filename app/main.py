@@ -270,6 +270,9 @@ class SpeakRequest(BaseModel):
 
 
 _tts_memory: dict[str, bytes] = {}
+# The Gnani account allows ONE active request at a time (a second one gets HTTP 429), so every
+# Gnani call (speech, listening, cloning) goes through this lock.
+GNANI_LOCK = threading.Lock()
 _tts_locks: dict[str, threading.Lock] = {}
 _tts_locks_guard = threading.Lock()
 
@@ -280,9 +283,39 @@ def _lock_for(key: str) -> threading.Lock:
 
 
 def tts_cache_key(text: str, lang: str) -> str:
-    model, voice = tts_voice(lang)
-    raw = f"{model}|{SPEECH[lang]['tts']}|{voice}|{text}"
+    cloned = active_clone()
+    if cloned:
+        voice_id = hashlib.sha256(cloned["embedding"].encode("utf-8")).hexdigest()[:16]
+        raw = f"vachana-vc-v1|{voice_id}|{text}"
+    else:
+        model, voice = tts_voice(lang)
+        raw = f"{model}|{SPEECH[lang]['tts']}|{voice}|{text}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+# ---------- The user's own (cloned) voice ----------
+# Stored only in user_data/voice.json (git-ignored). The reference recording itself is never kept.
+
+def voice_path() -> Path:
+    return learning.USER_DATA / "voice.json"
+
+
+def load_voice() -> dict:
+    try:
+        return json.loads(voice_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_voice(data: dict) -> None:
+    voice_path().parent.mkdir(parents=True, exist_ok=True)
+    voice_path().write_text(json.dumps(data), encoding="utf-8")
+
+
+def active_clone() -> dict | None:
+    v = load_voice()
+    emb = v.get("speaker_embedding")
+    return emb if v.get("enabled") and isinstance(emb, dict) else None
 
 
 def require_gnani_key():
@@ -320,9 +353,16 @@ def synthesize_cached(text: str, lang: str) -> tuple[bytes, bool]:
         require_gnani_key()
         model, voice = tts_voice(lang)
         code = SPEECH[lang]["tts"]
+        cloned = active_clone()
+        if cloned:
+            model, voice = "vachana-vc-v1", "cloned"
         t0 = time.perf_counter()
         try:
-            audio = gnani.synthesize(text, language=code, voice=voice, model=model)
+            with GNANI_LOCK:
+                if cloned:
+                    audio = gnani.synthesize_cloned(text, cloned)
+                else:
+                    audio = gnani.synthesize(text, language=code, voice=voice, model=model)
         except (httpx.HTTPError, ValueError) as e:
             raise gnani_error("Timbre", e)
         log.info("TTS miss model=%s lang=%s voice=%s chars=%d took=%.0fms",
@@ -440,8 +480,9 @@ def listen(audio: UploadFile = File(...), lang: str | None = Form(None), partner
         codes = SPEECH[lang]["stt"]
     t0 = time.perf_counter()
     try:
-        result = gnani.transcribe(data, filename=audio.filename or "partner.wav",
-                                  language=codes, fmt="codemix")
+        with GNANI_LOCK:
+            result = gnani.transcribe(data, filename=audio.filename or "partner.wav",
+                                      language=codes, fmt="codemix")
     except (httpx.HTTPError, ValueError) as e:
         raise gnani_error("Prisma", e)
     ms = round((time.perf_counter() - t0) * 1000)
@@ -545,6 +586,64 @@ def tiles_hide(ref: TileRef):
 def tiles_unhide():
     learning.unhide_all()
     return {"ok": True}
+
+
+# ---------- Voice cloning endpoints ----------
+
+class VoiceUse(BaseModel):
+    enabled: bool
+
+
+def voice_status() -> dict:
+    v = load_voice()
+    return {"cloned": bool(v.get("speaker_embedding")), "enabled": bool(v.get("enabled")),
+            "created": v.get("created")}
+
+
+@app.get("/api/voice")
+def voice_get():
+    return voice_status()
+
+
+@app.post("/api/voice/clone")
+def voice_clone(audio: UploadFile = File(...), consent: bool = Form(False)):
+    """5-30 s of the user's chosen voice -> a Gnani voice embedding. The audio is not kept."""
+    if not consent:
+        raise HTTPException(400, "Confirm that this is your voice or that you have the speaker's permission.")
+    data = audio.file.read(MAX_AUDIO_BYTES + 1)
+    if not data:
+        raise HTTPException(400, "Empty audio.")
+    if len(data) > MAX_AUDIO_BYTES:
+        raise HTTPException(413, "Recording too long (max 30 s).")
+    require_gnani_key()
+    try:
+        with GNANI_LOCK:
+            embedding = gnani.clone_embedding(data, filename=audio.filename or "voice.wav")
+    except (httpx.HTTPError, ValueError) as e:
+        raise gnani_error("Voice cloning", e)
+    save_voice({"speaker_embedding": embedding, "enabled": True, "consent": True,
+                "created": time.strftime("%Y-%m-%d %H:%M")})
+    log.info("voice clone created (embedding shape %s)", embedding.get("shape"))
+    return voice_status()
+
+
+@app.post("/api/voice/use")
+def voice_use(req: VoiceUse):
+    v = load_voice()
+    if req.enabled and not v.get("speaker_embedding"):
+        raise HTTPException(400, "No cloned voice yet.")
+    v["enabled"] = req.enabled
+    save_voice(v)
+    return voice_status()
+
+
+@app.post("/api/voice/delete")
+def voice_delete():
+    try:
+        voice_path().unlink()
+    except FileNotFoundError:
+        pass
+    return voice_status()
 
 
 # ---------- Demo mode (?demo=1) ----------

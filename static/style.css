@@ -647,3 +647,14 @@ button { cursor: pointer; touch-action: manipulation; }
 }
 
 .demo-week { min-height: 40px; min-width: 0; padding: 0 14px; font-size: 14px; white-space: nowrap; }
+
+/* ---------- My voice (cloning) ---------- */
+.voice-status { font-weight: 600; color: var(--ink-2); }
+.voice-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.voice-row .btn { min-height: 56px; font-size: 17px; flex: 1 1 160px; }
+#voice-field > .btn { min-height: 56px; font-size: 17px; flex: none; }
+.file-btn { cursor: pointer; }
+.voice-sample { font-size: 15px; color: var(--primary); font-weight: 600; }
+#voice-record.recording { background: var(--urgent); color: #fff; border-color: var(--urgent); }
+.consent { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; }
+.consent input { width: 24px; height: 24px; flex: none; margin-top: 1px; }
