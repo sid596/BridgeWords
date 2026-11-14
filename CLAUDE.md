@@ -6,7 +6,7 @@ Read this file before doing anything. It is the spec.
 
 A tablet-first web app for people who can't speak clearly but can tap. It **listens** to the conversation partner, turns the board into replies that fit what was just said, builds full sentences from a few taps, **asks instead of guessing** when the meaning is unclear, and **speaks only the reply the user approves**, in their language.
 
-This is an entry for Gnani AI's Great Indian AI Internship Challenge. **Deadline: Saturday 15 Nov 2026, 18:00 IST.** Build the smallest version that demos well. Polish beats features.
+This is an entry for Gnani AI's Great Indian AI Internship Challenge. **Deadline: Sunday 15 Nov 2026, 18:00 IST.** Build the smallest version that demos well. Polish beats features.
 
 ## Hard rules
 
