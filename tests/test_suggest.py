@@ -236,3 +236,31 @@ def test_fallback_speaks_tile_labels_in_the_partners_language(client, chat):
     assert body["fallback"] is True
     assert body["spoken_lang"] == "kn"
     assert body["spoken"] == [f"{label(client, 'medicine', 'kn')}, {label(client, 'want', 'kn')}"]
+
+
+def test_sentences_the_user_cannot_read_are_dropped():
+    out = llm.validate({"quick_replies": [], "sentences": ["ನನಗೆ ಪ್ಯಾರಾಸಿಟಮಾಲ್ ಬೇಕು.", "Mujhe paracetamol chahiye."],
+                        "spoken": ["ನನಗೆ ಪ್ಯಾರಾಸಿಟಮಾಲ್ ಬೇಕು.", "ನನಗೆ ಪ್ಯಾರಾಸಿಟಮಾಲ್ ಬೇಕು!"], "clarify": None,
+                        "translation": ""}, has_input=True, clarified=False, want_spoken=True, script="latin")
+    assert out["sentences"] == ["Mujhe paracetamol chahiye."]
+    assert out["spoken"] == ["ನನಗೆ ಪ್ಯಾರಾಸಿಟಮಾಲ್ ಬೇಕು!"]          # pairs stay together
+
+
+def test_all_sentences_in_the_wrong_script_falls_back(client, chat):
+    chat.result = chat_reply({"quick_replies": [], "sentences": ["ನನಗೆ ಔಷಧಿ ಬೇಕು."], "spoken": ["ನನಗೆ ಔಷಧಿ ಬೇಕು."],
+                              "clarify": None, "translation": ""})
+    body = client.post("/api/suggest", json={"tiles": ["medicine"], "lang": "hinglish", "partner_lang": "kn"}).json()
+    assert body["fallback"] is True
+    assert body["sentences"] == [label(client, "medicine", "hinglish")]
+
+
+def test_hindi_sentences_with_english_words_are_kept():
+    assert llm.script_share("मुझे paracetamol चाहिए", "devanagari") >= llm.MIN_SCRIPT_SHARE
+    assert llm.script_share("Mujhe paracetamol chahiye", "devanagari") < llm.MIN_SCRIPT_SHARE
+    assert llm.script_share("ನನಗೆ ಔಷಧಿ ಬೇಕು", "latin") < llm.MIN_SCRIPT_SHARE
+
+
+def test_schema_names_the_language_of_each_field():
+    schema = llm.response_schema("Hinglish", "Kannada")["schema"]["properties"]
+    assert "Hinglish" in schema["sentences"]["description"]
+    assert "Kannada" in schema["spoken"]["description"]

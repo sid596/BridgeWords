@@ -97,6 +97,9 @@ SPEECH = {
 # Prisma's detected_language_code -> speech language id
 STT_CODE_TO_SPEECH = {v["tts"]: k for k, v in SPEECH.items() if k != "hinglish"}
 
+# Writing system of each board language: suggestions the user can't read are dropped.
+BOARD_SCRIPT = {"hinglish": "latin", "en": "latin", "hi": "devanagari", "mr": "devanagari", "kn": "kannada"}
+
 # BOARD languages: the user reads and taps in one of these (tile labels exist for them).
 # understands: languages the user follows without a translation (profile.json can add more).
 LANGUAGES = {
@@ -397,6 +400,7 @@ async def suggest(req: SuggestRequest):
         result = await llm.suggest(
             profile=load_profile(),
             language_desc=SPEECH[lang]["llm"],
+            script=BOARD_SCRIPT[lang],
             partner_desc=SPEECH[req.partner_lang]["llm"] if (spoken_lang or translate) else None,
             want_spoken=bool(spoken_lang),
             want_translation=translate,
@@ -543,11 +547,60 @@ def tiles_unhide():
     return {"ok": True}
 
 
-# ---------- Page ----------
+# ---------- Demo mode (?demo=1) ----------
+
+class PartnerLine(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+
+
+# A synthetic week of conversation (fictional), to show board learning in a demo.
+DEMO_WEEK = [
+    ("partner", "Aarav, Sunday ko skydiving club jaana hai na?"),
+    ("partner", "Tumhara parachute bag dry ho gaya?"),
+    ("spoke", "Haan, mujhe skydiving jaana hai."),
+    ("partner", "Crutch kahan rakhi hai? Bahar chalna hai."),
+    ("partner", "Chai piyoge?"),
+    ("typed", "pasta"),
+    ("partner", "Aaj dinner mein pasta banau ya roti?"),
+    ("partner", "Kal zoo chalein?"),
+    ("partner", "Crutch le lo, stairs hain."),
+    ("spoke", "Mujhe parachute dekhna hai."),
+    ("partner", "Theek hai, so jao ab."),
+]
+
+
+@app.post("/api/demo/partner")
+def demo_partner(line: PartnerLine):
+    """A partner line typed in demo mode is treated like one Prisma heard."""
+    if learning_enabled():
+        learning.add_event("partner", line.text)
+    return {"ok": True}
+
+
+@app.post("/api/demo/seed")
+async def demo_seed(lang: str | None = None):
+    """Load the synthetic week and ask for tile ideas straight away."""
+    for kind, text in DEMO_WEEK:
+        learning.add_event(kind, text)
+    return await learn_propose(lang=lang, force=True)
+
+
+# ---------- Page + installable app ----------
 
 @app.get("/")
 def index():
     return FileResponse(STATIC / "index.html")
+
+
+@app.get("/manifest.webmanifest")
+def manifest():
+    return FileResponse(STATIC / "manifest.webmanifest", media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+def service_worker():
+    # Served from the root so it can make the whole app work offline.
+    return FileResponse(STATIC / "sw.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")

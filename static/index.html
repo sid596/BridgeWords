@@ -3,50 +3,69 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#1f3a5f">
-  <title>BRIDGEWORDS</title>
+  <meta name="theme-color" content="#1c2430">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="BridgeWords">
+  <title>BridgeWords</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;800&display=swap">
   <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body data-size="normal">
+  <!-- Line icons (no emoji in the interface; emoji are only the tile symbols) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></symbol>
+    <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3"/><path d="M14 2v4M8 10v4M16 18v4"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+    <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2Z"/></symbol>
+    <symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M2 2l20 20M8.5 16.5a5 5 0 0 1 7 0M2 8.8a15 15 0 0 1 4.2-2.7M10.7 5.1A15 15 0 0 1 22 8.8M5 12.9a10 10 0 0 1 5.2-2.8M16.9 11.5a10 10 0 0 1 2.1 1.4M12 20h.01"/></symbol>
+  </svg>
+
   <header class="topbar">
-    <div class="brand">BRIDGEWORDS</div>
+    <div class="brand" aria-label="BridgeWords"><span class="brand-a">Bridge</span><span class="brand-b">Words</span></div>
 
-    <label class="lang">
-      <span class="sr-only">Language</span>
-      <select id="lang-picker" aria-label="Language"></select>
-    </label>
-
-    <div class="mode-toggle" role="group" aria-label="Mode">
-      <button type="button" class="mode active" data-mode="listen" data-i18n="listen">🎧 Listen</button>
-      <button type="button" class="mode" data-mode="phone" data-i18n="phone">📞 Phone</button>
-    </div>
-
-    <label class="lang partner-lang">
-      <span class="partner-lang-label" data-i18n="partner_speaks">Partner speaks</span>
-      <select id="partner-picker" aria-label="Partner's language"></select>
-    </label>
-
-    <button type="button" id="mic-btn" class="mic-btn" aria-pressed="false">🎙 Start listening</button>
-
-    <div class="partner" aria-live="polite">
-      <div class="partner-line">
-        <span class="partner-label" data-i18n="partner_said">Partner said:</span>
-        <span id="partner-text" class="partner-text">…</span>
-      </div>
-      <div id="partner-meaning-line" class="partner-line partner-meaning" hidden>
-        <span class="partner-label" data-i18n="meaning">Meaning:</span>
-        <span id="partner-meaning" class="partner-text"></span>
+    <div class="caption" aria-live="polite">
+      <div class="caption-label" data-i18n="partner_said">Partner said</div>
+      <div id="partner-text" class="caption-text">…</div>
+      <div id="partner-meaning-line" class="caption-meaning" hidden>
+        <span class="caption-label" data-i18n="meaning">Meaning</span>
+        <span id="partner-meaning"></span>
       </div>
     </div>
 
-    <span id="status" class="status" role="button" tabindex="0" title="Tap for timings">ready</span>
+    <button type="button" id="mic-btn" class="mic-btn" aria-pressed="false">
+      <svg class="icon"><use href="#i-mic"/></svg><span class="mic-label">Start listening</span>
+    </button>
+
+    <span id="status" class="status" role="button" tabindex="0" title="Tap for timings">
+      <span class="status-dot"></span><span id="status-text">ready</span>
+    </span>
+
+    <button type="button" id="settings-btn" class="icon-btn" aria-label="Settings">
+      <svg class="icon"><use href="#i-settings"/></svg>
+    </button>
   </header>
 
-  <div id="phone-banner" class="phone-banner" hidden data-i18n="phone_banner">
-    📞 Put the call on speaker next to the tablet
+  <div id="offline-banner" class="banner banner-offline" hidden>
+    <svg class="icon"><use href="#i-wifi-off"/></svg>
+    <span data-i18n="offline">No internet. Urgent tiles still speak; suggestions show your words as tapped.</span>
+  </div>
+  <div id="phone-banner" class="banner banner-phone" hidden>
+    <svg class="icon"><use href="#i-phone"/></svg>
+    <span data-i18n="phone_banner">Put the call on speaker next to the tablet</span>
   </div>
 
-  <!-- Debug strip: tap the status pill (or open with ?debug=1) to toggle. -->
+  <!-- Debug strip: tap the status (or open with ?debug=1) to toggle. -->
   <div id="debug" class="debug" hidden>
     <div class="debug-level" title="Mic level (bar) and speech threshold (line)">
       <div id="debug-bar" class="debug-bar"></div>
@@ -55,21 +74,26 @@
     <div id="debug-text" class="debug-text">mic off</div>
   </div>
 
+  <!-- Demo panel (?demo=1): type what the partner said, load a sample week. -->
+  <div id="demo-panel" class="demo-panel" hidden>
+    <span class="demo-tag">Demo</span>
+    <input id="demo-input" class="demo-input" type="text" placeholder="Type what the partner said, press Enter" autocomplete="off">
+    <div id="demo-lines" class="demo-lines"></div>
+    <button type="button" id="demo-week" class="btn btn-quiet demo-week">Load sample week</button>
+  </div>
+
   <section class="replies" aria-label="Suggested replies">
     <div id="reply-row" class="reply-row"></div>
+    <div id="recent" class="recent" hidden></div>
   </section>
 
   <main class="board-wrap">
     <section class="board" aria-label="Symbol board">
       <div id="ideas" class="ideas" hidden></div>
-      <div class="tabs-row">
-        <nav id="tabs" class="tabs" role="tablist"></nav>
-        <button type="button" id="edit-btn" class="edit-btn" data-i18n="edit">✏️ Edit</button>
-      </div>
+      <nav id="tabs" class="tabs" role="tablist"></nav>
       <div id="edit-bar" class="edit-bar" hidden>
         <span class="edit-hint" data-i18n="edit_hint">Tap a tile to hide it. Your own tiles are removed.</span>
-        <button type="button" id="unhide-btn" class="btn btn-secondary" hidden>↩ Show hidden</button>
-        <button type="button" id="forget-btn" class="btn btn-secondary" data-i18n="forget">🧹 Forget conversations</button>
+        <button type="button" id="unhide-btn" class="btn btn-quiet" hidden>Show hidden</button>
         <button type="button" id="edit-done" class="btn btn-primary" data-i18n="done">Done</button>
       </div>
       <div id="grid" class="grid"></div>
@@ -88,18 +112,92 @@
         <span class="chips-empty">Tap tiles to build a message</span>
       </div>
       <input id="typed" class="typed" type="text" placeholder="Type…" data-i18n-placeholder="type_placeholder" autocomplete="off" autocapitalize="off">
-      <button type="button" id="clear-btn" class="btn btn-secondary" data-i18n="clear">Clear</button>
+      <button type="button" id="clear-btn" class="btn btn-quiet" data-i18n="clear">Clear</button>
       <button type="button" id="suggest-btn" class="btn btn-primary" disabled data-i18n="suggest">Suggest</button>
     </div>
     <div id="results" class="results"></div>
   </footer>
 
-  <div id="urgent-overlay" class="urgent-overlay" role="alert" hidden>
-    <div id="urgent-overlay-emoji" class="urgent-overlay-emoji"></div>
-    <div id="urgent-overlay-text" class="urgent-overlay-text"></div>
-    <div class="urgent-overlay-hint" data-i18n="tap_to_close">Tap anywhere to close</div>
+  <!-- Settings drawer -->
+  <div id="settings" class="drawer" hidden>
+    <div class="drawer-backdrop" data-close></div>
+    <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="drawer-head">
+        <h2 id="settings-title" data-i18n="settings">Settings</h2>
+        <button type="button" class="icon-btn icon-btn-dark" data-close aria-label="Close">
+          <svg class="icon"><use href="#i-x"/></svg>
+        </button>
+      </div>
+
+      <label class="field">
+        <span data-i18n="board_language">My language</span>
+        <select id="lang-picker"></select>
+      </label>
+      <label class="field">
+        <span data-i18n="partner_speaks">Partner speaks</span>
+        <select id="partner-picker"></select>
+      </label>
+
+      <div class="field">
+        <span data-i18n="mode">Conversation</span>
+        <div class="segmented" role="group">
+          <button type="button" class="mode active" data-mode="listen" data-i18n="listen">In person</button>
+          <button type="button" class="mode" data-mode="phone" data-i18n="phone">Phone call</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <span data-i18n="tile_size">Tile size</span>
+        <div class="segmented" role="group" id="size-group">
+          <button type="button" data-size="normal" data-i18n="size_normal">Normal</button>
+          <button type="button" data-size="large" data-i18n="size_large">Large</button>
+          <button type="button" data-size="xl" data-i18n="size_xl">Extra large</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <span data-i18n="tap_guard">Ignore repeated taps</span>
+        <div class="segmented" role="group" id="guard-group">
+          <button type="button" data-guard="0" data-i18n="off">Off</button>
+          <button type="button" data-guard="400">0.4 s</button>
+          <button type="button" data-guard="800">0.8 s</button>
+          <button type="button" data-guard="1500">1.5 s</button>
+        </div>
+        <small data-i18n="tap_guard_hint">For tremor: a second tap on the same button within this time is ignored.</small>
+      </div>
+
+      <div class="field">
+        <span data-i18n="scanning">Switch scanning</span>
+        <div class="segmented" role="group" id="scan-group">
+          <button type="button" data-scan="0" data-i18n="off">Off</button>
+          <button type="button" data-scan="1500">1.5 s</button>
+          <button type="button" data-scan="2500">2.5 s</button>
+          <button type="button" data-scan="4000">4 s</button>
+        </div>
+        <small data-i18n="scanning_hint">Highlights groups, then buttons, one at a time. Press a switch (Space or Enter) or tap anywhere to choose.</small>
+      </div>
+
+      <div class="field field-actions">
+        <button type="button" id="edit-btn" class="btn btn-quiet" data-i18n="edit">Edit board</button>
+        <button type="button" id="forget-btn" class="btn btn-quiet" data-i18n="forget">Forget conversations</button>
+        <button type="button" id="debug-btn" class="btn btn-quiet" data-i18n="timings">Show timings</button>
+      </div>
+    </div>
   </div>
 
+  <!-- Full-screen overlays -->
+  <div id="urgent-overlay" class="overlay overlay-urgent" role="alert" hidden>
+    <div id="urgent-overlay-emoji" class="overlay-emoji"></div>
+    <div id="urgent-overlay-text" class="overlay-text"></div>
+    <div class="overlay-hint" data-i18n="tap_to_close">Tap anywhere to close</div>
+  </div>
+  <div id="show-overlay" class="overlay overlay-show" hidden>
+    <div id="show-overlay-text" class="overlay-text"></div>
+    <div id="show-overlay-sub" class="overlay-sub"></div>
+    <div class="overlay-hint" data-i18n="tap_to_close">Tap anywhere to close</div>
+  </div>
+
+  <div id="scan-hint" class="scan-hint" hidden></div>
   <div id="toast" class="toast" role="status" hidden></div>
 
   <script src="/static/app.js"></script>

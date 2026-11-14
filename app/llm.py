@@ -5,6 +5,7 @@ Every response is validated here; on any error the caller falls back to plain ti
 """
 import json
 import logging
+import unicodedata
 import os
 import time
 
@@ -169,6 +170,41 @@ def build_user_message(history, selected, typed, clarification, translate_this=N
     return json.dumps(msg, ensure_ascii=False)
 
 
+# Which writing system the user reads (board language). Sentences in another script are dropped.
+SCRIPT_RANGES = {
+    "latin": [(0x41, 0x5A), (0x61, 0x7A), (0xC0, 0x24F)],
+    "devanagari": [(0x0900, 0x097F)],
+    "kannada": [(0x0C80, 0x0CFF)],
+}
+
+
+MIN_SCRIPT_SHARE = 0.3  # wrong-script sentences score ~0; mixing in an English word stays well above
+
+
+def script_share(text: str, script: str) -> float:
+    """Share of letters in text that belong to script (1.0 if there are no letters).
+    Vowel signs (matras) count as letters, so Indic words aren't under-counted."""
+    letters = [c for c in text if c.isalpha() or unicodedata.category(c).startswith("M")]
+    if not letters:
+        return 1.0
+    ranges = SCRIPT_RANGES[script]
+    hits = sum(1 for c in letters if any(a <= ord(c) <= b for a, b in ranges))
+    return hits / len(letters)
+
+
+def response_schema(language_desc: str, partner_desc: str | None) -> dict:
+    """The strict schema, with each field naming its language (the model reads these)."""
+    schema = json.loads(json.dumps(RESPONSE_SCHEMA))
+    props = schema["schema"]["properties"]
+    props["sentences"]["description"] = f"Sentences for the user to READ, written in {language_desc}."
+    props["quick_replies"]["description"] = f"Tile ids, or short labels in {language_desc}."
+    props["spoken"]["description"] = (f"The same sentences in {partner_desc}, in the same order (said aloud to the partner)."
+                                      if partner_desc else "Always [] here.")
+    props["translation"]["description"] = (f"The partner's latest line translated into {language_desc}."
+                                           if partner_desc else 'Always "" here.')
+    return schema
+
+
 def _clean_list(items, limit, max_chars):
     out, seen = [], set()
     for item in items if isinstance(items, list) else []:
@@ -203,7 +239,7 @@ def _clean_pairs(sentences, spoken):
 
 
 def validate(raw: object, *, has_input: bool, clarified: bool,
-             want_spoken: bool = False, want_translation: bool = False) -> dict:
+             want_spoken: bool = False, want_translation: bool = False, script: str | None = None) -> dict:
     """Coerce model output into the API contract. Raises ValueError if unusable."""
     if not isinstance(raw, dict):
         raise ValueError("LLM output is not a JSON object")
@@ -217,6 +253,13 @@ def validate(raw: object, *, has_input: bool, clarified: bool,
         sentences, spoken = _clean_pairs(raw.get("sentences"), raw.get("spoken"))
     else:
         sentences, spoken = _clean_list(raw.get("sentences"), MAX_SENTENCES, MAX_SENTENCE_CHARS), []
+    if script and sentences:
+        # The user must be able to read every sentence: drop ones written in another script.
+        keep = [i for i, x in enumerate(sentences) if script_share(x, script) >= MIN_SCRIPT_SHARE]
+        if len(keep) < len(sentences):
+            log.warning("dropped %d sentence(s) not in the user's script (%s)", len(sentences) - len(keep), script)
+        sentences = [sentences[i] for i in keep]
+        spoken = [spoken[i] for i in keep] if spoken else []
 
     clarify = None
     c = raw.get("clarify")
@@ -256,7 +299,7 @@ async def post_chat(url: str, body: dict, key: str) -> tuple[int, object]:
 
 
 async def suggest(*, profile, language_desc, catalogue, history, selected, typed, clarification,
-                  partner_desc=None, want_spoken=False, want_translation=False) -> dict:
+                  partner_desc=None, want_spoken=False, want_translation=False, script=None) -> dict:
     """Call the LLM and return validated suggestions. Raises on any failure."""
     key = os.environ.get("OPENAI_API_KEY")
     if not key:
@@ -272,7 +315,7 @@ async def suggest(*, profile, language_desc, catalogue, history, selected, typed
             {"role": "user", "content": build_user_message(history, selected, typed, clarification,
                                                            history[-1] if want_translation and history else None)},
         ],
-        "response_format": {"type": "json_schema", "json_schema": RESPONSE_SCHEMA},
+        "response_format": {"type": "json_schema", "json_schema": response_schema(language_desc, partner_desc)},
         "max_completion_tokens": 1500,
     }
     effort = os.environ.get("LLM_REASONING_EFFORT", "none").strip()
@@ -291,6 +334,6 @@ async def suggest(*, profile, language_desc, catalogue, history, selected, typed
         raise ValueError("LLM refused")
     raw = json.loads(message.get("content") or "")
     result = validate(raw, has_input=bool(selected or typed), clarified=bool(clarification),
-                      want_spoken=want_spoken, want_translation=want_translation)
+                      want_spoken=want_spoken, want_translation=want_translation, script=script)
     log.info("LLM ok model=%s took=%.0fms", model, (time.perf_counter() - t0) * 1000)
     return result

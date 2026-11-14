@@ -166,3 +166,13 @@ def test_every_board_language_has_complete_interface_text(client, lang):
         ui = json.load(f)
     missing = set(ui["en"]) - set(ui[lang])
     assert not missing, f"{lang} is missing {sorted(missing)}"
+
+
+# ---------- Installable app ----------
+
+def test_manifest_and_service_worker_are_served_from_the_root(client):
+    m = client.get("/manifest.webmanifest")
+    assert m.status_code == 200 and m.json()["start_url"] == "/"
+    sw = client.get("/sw.js")
+    assert sw.status_code == 200 and "javascript" in sw.headers["content-type"]
+    assert 'req.method !== "GET"' in sw.text     # speech and suggestions are never served from cache

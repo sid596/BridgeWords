@@ -205,3 +205,18 @@ def test_only_partner_lines_trigger_an_analysis(client, chat):
     chat.result = proposals()
     client.post("/api/learn/propose")
     assert len(chat.calls) == 1
+
+
+# ---------- Demo mode ----------
+
+def test_demo_partner_line_is_logged_like_a_heard_line(client):
+    client.post("/api/demo/partner", json={"text": "Parachute ready hai?"})
+    assert [(e["kind"], e["text"]) for e in learning.load()["events"]] == [("partner", "Parachute ready hai?")]
+
+
+def test_demo_week_loads_synthetic_log_and_asks_for_ideas(client, chat):
+    chat.result = proposals({**PARACHUTE, "evidence": ["Tumhara parachute bag dry ho gaya?",
+                                                       "Mujhe parachute dekhna hai."]})
+    pending = client.post("/api/demo/seed?lang=en").json()["pending"]
+    assert [p["id"] for p in pending] == ["parachute"]
+    assert len(learning.load()["events"]) > 5

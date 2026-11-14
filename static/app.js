@@ -1,6 +1,8 @@
-// BRIDGEWORDS frontend (vanilla JS, no build step).
+// BridgeWords frontend (vanilla JS, no build step).
 // Board + chips, speech via /api/speak, suggestions via /api/suggest,
-// listening via mic + voice-activity detection + /api/listen, phone mode.
+// listening via mic + voice-activity detection + /api/listen, phone mode,
+// translation, board learning, settings for motor access (tile size, tap guard,
+// switch scanning), recently said, show-to-partner, demo mode, offline banner.
 "use strict";
 
 const state = {
@@ -22,7 +24,38 @@ const state = {
   partnerLanguages: [],  // every language the partner may speak (all Gnani languages)
   partnerSetting: "",    // "" = same as mine, "auto" = detect, or a language id
   partnerDetected: null, // last language Prisma heard in auto mode
+  recent: [],            // last sentences the user spoke: [{shown, text, lang}]
 };
+
+// Per-device settings (localStorage; the app works without it).
+const settings = { size: "normal", guard: 400, scan: 0, partner: "", mode: "listen" };
+
+function loadSettings() {
+  try {
+    Object.assign(settings, JSON.parse(localStorage.getItem("bw-settings") || "{}"));
+    state.recent = JSON.parse(localStorage.getItem("bw-recent") || "[]").slice(0, 5);
+  } catch {}
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem("bw-settings", JSON.stringify(settings));
+    localStorage.setItem("bw-recent", JSON.stringify(state.recent));
+  } catch {}
+}
+
+// Fitzgerald Key colour per category (as on AAC devices).
+const CATEGORY_KEY = {
+  "Quick replies": "social",
+  Feelings: "feeling",
+  "Food and drink": "thing",
+  "Health and body": "thing",
+  People: "people",
+  "Places and things": "thing",
+  "Needs and time": "action",
+  "My tiles": "mine",
+};
+const keyFor = (category) => CATEGORY_KEY[category] || "thing";
 
 // Interface text in the board language, falling back to the key.
 function t(key) {
@@ -54,10 +87,33 @@ function el(tag, className, children = []) {
   return node;
 }
 
-function button(className, children, onClick) {
+function icon(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "icon");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `#i-${name}`);
+  svg.append(use);
+  return svg;
+}
+
+// Tremor guard: a second tap on the same control within settings.guard ms is ignored.
+const lastTap = new Map();
+function isRepeatTap(key) {
+  if (!settings.guard || !key) return false;
+  const now = performance.now();
+  const prev = lastTap.get(key) || 0;
+  lastTap.set(key, now);
+  return now - prev < settings.guard;
+}
+
+function button(className, children, onClick, guardKey = null) {
   const b = el("button", className, children);
   b.type = "button";
-  b.addEventListener("click", onClick);
+  b.addEventListener("click", (e) => {
+    if (isRepeatTap(guardKey)) return console.log(`[tap] ignored repeat on ${guardKey}`);
+    onClick(e);
+  });
   return b;
 }
 
@@ -81,7 +137,7 @@ function refreshStatus() {
   if (mic.on && mic.recording) s = "hearing";
   if (busy > 0) s = "thinking";
   if (state.speaking) s = "speaking";
-  $("status").textContent = (state.ui.status && state.ui.status[s]) || s;
+  $("status-text").textContent = (state.ui.status && state.ui.status[s]) || s;
   $("status").dataset.state = s;
 }
 
@@ -113,6 +169,7 @@ const debug = {
     this.set(new URLSearchParams(location.search).has("debug") || saved === "1");
     const toggle = () => this.set(!this.on);
     $("status").addEventListener("click", toggle);
+    $("debug-btn").addEventListener("click", toggle);
     $("status").addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && toggle());
   },
 
@@ -156,13 +213,25 @@ function langCode(lang) {
 }
 
 async function postJSON(url, body) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    setOffline(true); // the request never reached our server
+    throw err;
+  }
   if (!res.ok) throw new Error(await errorText(res));
-  return res.json();
+  const data = await res.json();
+  if (url === "/api/suggest") setOffline(!!data.fallback && !navigator.onLine);
+  return data;
+}
+
+function setOffline(on) {
+  $("offline-banner").hidden = !on;
 }
 
 async function errorText(res) {
@@ -301,22 +370,32 @@ async function speakFixed(tile) {
   }
 }
 
-async function prefetchFixed() {
+// Fetch fixed phrases one at a time: firing them all at once trips Timbre's rate limit (HTTP 429),
+// which would leave an urgent tile without its audio.
+let prefetchChain = Promise.resolve();
+
+function prefetchFixed() {
+  prefetchChain = prefetchChain.then(prefetchFixedNow, prefetchFixedNow);
+  return prefetchChain;
+}
+
+async function prefetchFixedNow() {
   const lang = state.lang;
-  const fixed = state.tiles.filter((x) => x.say);
   const box = $("urgent-state");
   box.textContent = t("voice_loading");
-  const results = await Promise.allSettled(
-    fixed.map((tile) => {
-      const p = fixedPhrase(tile);
-      return fetchSpeech(p.text, p.lang);
-    })
-  );
+  let failed = null;
+  for (const tile of state.tiles.filter((x) => x.say)) {
+    const p = fixedPhrase(tile);
+    try {
+      await fetchSpeech(p.text, p.lang);
+    } catch (err) {
+      failed = err;
+    }
+  }
   if (lang !== state.lang) return; // language changed meanwhile
-  const failed = results.find((r) => r.status === "rejected");
   box.textContent = failed ? t("device_voice") : t("voice_ready");
-  box.title = failed ? failed.reason.message : "";
-  if (failed) console.warn("[urgent] voice not cached:", failed.reason.message);
+  box.title = failed ? failed.message : "";
+  if (failed) console.warn("[urgent] voice not cached:", failed.message);
 }
 
 function onUrgent(tile) {
@@ -360,7 +439,7 @@ async function loadSymbols(lang) {
 }
 
 function chipInfo(key) {
-  if (key.startsWith(TXT)) return { emoji: "💬", label: key.slice(TXT.length) };
+  if (key.startsWith(TXT)) return { emoji: "", label: key.slice(TXT.length) };
   return state.byId[key];
 }
 
@@ -467,6 +546,8 @@ function renderAll() {
   renderGrid();
   renderUrgent();
   renderChips();
+  renderRecent();
+  renderSegments();
 }
 
 function renderLangPicker() {
@@ -485,8 +566,8 @@ function escapeButtons(onSomethingElse) {
   const out = [];
   const se = state.byId.something_else;
   const wait = state.byId.wait;
-  if (se) out.push(button("reply escape", tileFace(se), onSomethingElse));
-  if (wait) out.push(button("reply escape", tileFace(wait), onWait));
+  if (se) out.push(button("reply escape", tileFace(se), onSomethingElse, "something_else"));
+  if (wait) out.push(button("reply escape", tileFace(wait), onWait, "wait"));
   return out;
 }
 
@@ -498,12 +579,14 @@ function renderReplies(fresh = false) {
   const buttons = state.quickReplies.map((key) => {
     const tile = state.byId[key];
     const chipKey = tile ? key : TXT + key;
-    const face = tile ? tileFace(tile) : [el("span", "emoji", "💬"), el("span", "label", key)];
+    const face = tile ? tileFace(tile) : [el("span", "label", key)];
     const selected = state.selected.includes(chipKey);
-    return button("reply" + (selected ? " selected" : ""), face, () => {
+    const b = button("reply" + (selected ? " selected" : ""), face, () => {
       toggleSelected(chipKey);
       renderReplies();
-    });
+    }, `reply:${chipKey}`);
+    if (tile) b.dataset.key = keyFor(tile.category);
+    return b;
   });
   const row = $("reply-row");
   row.replaceChildren(...buttons, ...escapeButtons(focusBoard));
@@ -524,6 +607,7 @@ function renderTabs() {
       });
       b.setAttribute("role", "tab");
       b.setAttribute("aria-selected", String(cat === state.activeCat));
+      b.dataset.key = keyFor(cat);
       return b;
     })
   );
@@ -537,12 +621,13 @@ function renderGrid() {
     ...tiles.map((tile) => {
       const selected = state.selected.includes(tile.id);
       const face = tileFace(tile);
-      if (state.editMode) face.push(el("span", "tile-x", tile.learned ? "🗑" : "✕"));
-      const b = button("tile" + (selected ? " selected" : "") + (tile.learned ? " learned" : ""), face, () => {
+      if (state.editMode) face.push(el("span", "tile-x", "✕"));
+      const b = button("tile" + (selected ? " selected" : ""), face, () => {
         if (state.editMode) return hideTile(tile);
         toggleSelected(tile.id);
         renderReplies();
-      });
+      }, `tile:${tile.id}`);
+      b.dataset.key = keyFor(tile.category);
       b.setAttribute("aria-pressed", String(selected));
       b.title = tile.label_en;
       return b;
@@ -554,7 +639,7 @@ function renderUrgent() {
   $("urgent-tiles").replaceChildren(
     ...state.tiles
       .filter((t) => t.urgent)
-      .map((tile) => button("urgent-tile", tileFace(tile), () => onUrgent(tile)))
+      .map((tile) => button("urgent-tile", tileFace(tile), () => onUrgent(tile), `urgent:${tile.id}`))
   );
 }
 
@@ -574,8 +659,10 @@ function renderChips() {
         () => {
           toggleSelected(key);
           renderReplies();
-        }
+        },
+        `chip:${key}`
       );
+      if (info.category) b.dataset.key = keyFor(info.category);
       b.setAttribute("aria-label", `Remove ${info.label}`);
       return b;
     })
@@ -597,14 +684,15 @@ function renderSentences({ sentences, spoken = [], spoken_lang: spokenLang, fall
   const lang = state.lang;
   const cards = sentences.map((text, i) => {
     const say = spokenLang && spoken[i] ? { text: spoken[i], lang: spokenLang } : { text, lang };
-    const speakBtn = el("button", "btn btn-speak", t("speak"));
-    speakBtn.type = "button";
-    speakBtn.addEventListener("click", () => onSpeakCard(speakBtn, say.text, say.lang, text));
+    const speakBtn = button("btn btn-speak", [icon("speaker"), el("span", null, t("speak"))], () =>
+      onSpeakCard(speakBtn, say.text, say.lang, text), `speak:${say.text}`);
+    const showBtn = button("btn btn-show", [icon("expand"), el("span", null, t("show"))], () =>
+      showToPartner(say.text, say.text !== text ? text : ""), `show:${say.text}`);
     const body = [el("p", "card-text", text)];
     if (say.lang !== lang) {
-      body.push(el("p", "card-spoken", [`🗣 ${t("will_say")} (${langName(say.lang)}): `, el("strong", null, say.text)]));
+      body.push(el("p", "card-spoken", [`${t("will_say")} (${langName(say.lang)}): `, el("strong", null, say.text)]));
     }
-    return el("div", "card", [el("div", "card-body", body), speakBtn]);
+    return el("div", "card", [el("div", "card-body", body), el("div", "card-actions", [speakBtn, showBtn])]);
   });
   const children = [];
   if (isFallback) children.push(el("p", "note", t("fallback_note")));
@@ -616,11 +704,11 @@ function renderSentences({ sentences, spoken = [], spoken_lang: spokenLang, fall
 // Clarifying question: big option buttons; the answer goes back to /api/suggest.
 function renderClarify({ question, options }) {
   const opts = options.map((opt) =>
-    button("btn btn-option", opt, () => onSuggest({ question, answer: opt }))
+    button("btn btn-option", opt, () => onSuggest({ question, answer: opt }), `opt:${opt}`)
   );
   $("results").replaceChildren(
     el("div", "clarify", [
-      el("p", "clarify-q", ["❓ ", question]),
+      el("p", "clarify-q", question),
       el("div", "clarify-options", [...opts, ...escapeButtons(somethingElseFromResults)]),
     ])
   );
@@ -631,22 +719,53 @@ async function onSpeakCard(btn, text, lang, shownText = text) {
     stopSpeaking();
     return;
   }
+  const label = (b, playing) => b.replaceChildren(icon(playing ? "stop" : "speaker"), el("span", null, t(playing ? "stop" : "speak")));
   document.querySelectorAll(".btn-speak.playing").forEach((b) => {
     b.classList.remove("playing");
-    b.textContent = t("speak");
+    label(b, false);
   });
   btn.classList.add("playing");
-  btn.textContent = t("stop");
+  label(btn, true);
   try {
     await speak(text, lang);
     logSpoken(shownText);
+    remember(shownText, text, lang);
   } catch (err) {
     console.warn("[speak] failed:", err.message);
     toast(err.message, 4000);
   } finally {
     btn.classList.remove("playing");
-    btn.textContent = t("speak");
+    label(btn, false);
   }
+}
+
+// ---------- Recently said: one tap repeats a sentence the user already chose ----------
+
+function remember(shown, text, lang) {
+  state.recent = [{ shown, text, lang }, ...state.recent.filter((r) => r.text !== text)].slice(0, 5);
+  saveSettings();
+  renderRecent();
+}
+
+function renderRecent() {
+  const box = $("recent");
+  box.hidden = state.recent.length === 0;
+  box.replaceChildren(
+    el("span", "recent-label", t("recent")),
+    ...state.recent.map((r) =>
+      button("recent-item", [icon("repeat"), el("span", null, r.shown)], () => {
+        speak(r.text, r.lang).catch((err) => toast(err.message, 4000));
+      }, `recent:${r.text}`)
+    )
+  );
+}
+
+// ---------- Show to partner: big text for noise or a partner who is hard of hearing ----------
+
+function showToPartner(text, sub) {
+  $("show-overlay-text").textContent = text;
+  $("show-overlay-sub").textContent = sub || "";
+  $("show-overlay").hidden = false;
 }
 
 // ======================================================================
@@ -885,13 +1004,9 @@ async function handleSegment(wav, endedAt) {
     return;
   }
 
-  state.history = [...state.history, heard.transcript].slice(-MAX_HISTORY);
   if (state.partnerSetting === "auto") state.partnerDetected = heard.partner_lang;
-  $("partner-text").textContent = heard.transcript;
-  $("partner-text").title = heard.transcript;
-  showMeaning(""); // the translation arrives with the reply suggestions
   debug.note("heard", `heard (${heard.language}): "${heard.transcript}"`);
-  learnSoon(); // the server logged this line for personal-board learning
+  showPartnerLine(heard.transcript);
 
   try {
     const data = await suggestReplies();
@@ -907,9 +1022,17 @@ async function handleSegment(wav, endedAt) {
   }
 }
 
+function showPartnerLine(text) {
+  state.history = [...state.history, text].slice(-MAX_HISTORY);
+  $("partner-text").textContent = text;
+  $("partner-text").title = text;
+  showMeaning(""); // the translation arrives with the reply suggestions
+  learnSoon(); // the server logged this line for personal-board learning
+}
+
 function renderMicButton() {
   const b = $("mic-btn");
-  b.textContent = mic.on ? t("stop_listening") : t("start_listening");
+  b.replaceChildren(icon(mic.on ? "pause" : "mic"), el("span", "mic-label", mic.on ? t("stop_listening") : t("start_listening")));
   b.setAttribute("aria-pressed", String(mic.on));
   b.classList.toggle("on", mic.on);
 }
@@ -966,8 +1089,8 @@ function showIdeas(ideas) {
       el("div", "idea", [
         el("span", "emoji", idea.emoji),
         el("span", "idea-text", [el("strong", null, idea.label), el("small", null, idea.reason)]),
-        button("idea-add", t("add"), () => decideIdea(idea, true)),
-        button("idea-no", "✕", () => decideIdea(idea, false)),
+        button("idea-add", [icon("plus"), el("span", null, t("add"))], () => decideIdea(idea, true), `idea+:${idea.id}`),
+        button("idea-no", icon("x"), () => decideIdea(idea, false), `idea-:${idea.id}`),
       ])
     )
   );
@@ -999,7 +1122,7 @@ async function decideIdea(idea, accept) {
 function setEditMode(on) {
   state.editMode = on;
   $("edit-bar").hidden = !on;
-  $("edit-btn").hidden = on;
+  if (on) closeSettings();
   $("unhide-btn").hidden = !on || state.hiddenCount === 0;
   $("unhide-btn").textContent = `${t("show_hidden")} (${state.hiddenCount})`;
   renderGrid();
@@ -1042,6 +1165,7 @@ function applyUI() {
   });
   renderMicButton();
   refreshStatus();
+  $("scan-hint").textContent = t("scan_choose");
 }
 
 function renderPartnerPicker() {
@@ -1060,6 +1184,8 @@ function renderPartnerPicker() {
 
 function setPartnerSetting(value) {
   state.partnerSetting = value;
+  settings.partner = value;
+  saveSettings();
   state.partnerDetected = null;
   showMeaning("");
   prefetchFixed(); // urgent phrases in the partner's language, if available
@@ -1073,18 +1199,261 @@ function showMeaning(text) {
 }
 
 // ======================================================================
+// Settings drawer
+// ======================================================================
+
+function openSettings() {
+  $("settings").hidden = false;
+  scan.pause(true);
+}
+
+function closeSettings() {
+  $("settings").hidden = true;
+  scan.pause(false);
+}
+
+function renderSegments() {
+  const mark = (groupId, attr, value) =>
+    document.querySelectorAll(`#${groupId} button`).forEach((b) => b.classList.toggle("active", b.dataset[attr] === String(value)));
+  mark("size-group", "size", settings.size);
+  mark("guard-group", "guard", settings.guard);
+  mark("scan-group", "scan", settings.scan);
+}
+
+function applySettings() {
+  document.body.dataset.size = settings.size;
+  renderSegments();
+  scan.setInterval(Number(settings.scan) || 0);
+}
+
+function wireSegments() {
+  const wire = (groupId, attr, apply) =>
+    document.querySelectorAll(`#${groupId} button`).forEach((b) =>
+      b.addEventListener("click", () => {
+        apply(b.dataset[attr]);
+        saveSettings();
+        applySettings();
+      })
+    );
+  wire("size-group", "size", (v) => (settings.size = v));
+  wire("guard-group", "guard", (v) => (settings.guard = Number(v)));
+  wire("scan-group", "scan", (v) => (settings.scan = Number(v)));
+}
+
+// ======================================================================
+// Switch scanning: groups light up one by one, then the buttons inside.
+// One switch (Space/Enter, or a tap anywhere) chooses. Many people with
+// severe CP use AAC this way instead of pointing.
+// ======================================================================
+
+const scan = {
+  interval: 0,
+  timer: null,
+  level: "group",   // "group" | "item"
+  groups: [],
+  gi: -1,
+  items: [],
+  ii: -1,
+  rounds: 0,
+  paused: false,
+  clicking: false,
+
+  groupDefs() {
+    const visible = (node) => node && !node.hidden && node.offsetParent !== null;
+    const buttons = (sel) => [...document.querySelectorAll(sel)].filter((b) => visible(b) && !b.disabled);
+    return [
+      { name: "replies", el: $("reply-row"), items: () => buttons("#reply-row button, #recent button") },
+      { name: "results", el: $("results"), items: () => buttons("#results button") },
+      { name: "tabs", el: $("tabs"), items: () => buttons("#tabs button") },
+      { name: "tiles", el: $("grid"), items: () => buttons("#grid button, #ideas button") },
+      { name: "message", el: document.querySelector(".compose"), items: () => buttons(".compose button") },
+      { name: "urgent", el: document.querySelector(".urgent"), items: () => buttons(".urgent button") },
+    ].filter((g) => visible(g.el) && g.items().length);
+  },
+
+  setInterval(ms) {
+    this.interval = ms;
+    this.stopTimer();
+    this.clear();
+    $("scan-hint").hidden = !ms;
+    if (ms) {
+      $("scan-hint").textContent = t("scan_choose");
+      this.level = "group";
+      this.gi = -1;
+      this.timer = setInterval(() => this.step(), ms);
+      this.step();
+    }
+  },
+
+  stopTimer() {
+    clearInterval(this.timer);
+    this.timer = null;
+  },
+
+  pause(on) {
+    this.paused = on;
+  },
+
+  clear() {
+    document.querySelectorAll(".scan-group, .scan-item").forEach((n) => n.classList.remove("scan-group", "scan-item"));
+  },
+
+  step() {
+    if (this.paused || !$("urgent-overlay").hidden || !$("show-overlay").hidden) return;
+    this.clear();
+    if (this.level === "group") {
+      this.groups = this.groupDefs();
+      if (!this.groups.length) return;
+      this.gi = (this.gi + 1) % this.groups.length;
+      this.groups[this.gi].el.classList.add("scan-group");
+    } else {
+      this.items = this.groups[this.gi]?.items() || [];
+      if (!this.items.length) return this.backToGroups();
+      this.ii += 1;
+      if (this.ii >= this.items.length) {
+        this.ii = 0;
+        if (++this.rounds >= 2) return this.backToGroups(); // nothing chosen twice round: go back up
+      }
+      const item = this.items[this.ii];
+      item.classList.add("scan-item");
+      item.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  },
+
+  backToGroups() {
+    this.level = "group";
+    this.clear();
+    this.step();
+  },
+
+  select() {
+    if (!this.interval) return;
+    if (this.level === "group") {
+      if (this.gi < 0 || !this.groups[this.gi]) return;
+      this.level = "item";
+      this.ii = -1;
+      this.rounds = 0;
+    } else {
+      const item = this.items[this.ii];
+      this.level = "group";
+      this.gi = -1;
+      if (item) {
+        this.clicking = true;
+        item.click();
+        this.clicking = false;
+      }
+    }
+    // Restart the timer so the next highlight gets a full interval.
+    this.stopTimer();
+    this.timer = setInterval(() => this.step(), this.interval);
+    this.step();
+  },
+
+  init() {
+    const exempt = (target) => target.closest?.("#settings, #settings-btn, .overlay");
+    // In scanning mode a tap anywhere is the switch; normal pointing is disabled.
+    document.addEventListener("pointerdown", (e) => {
+      if (!this.interval || this.paused || exempt(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.select();
+    }, true);
+    document.addEventListener("click", (e) => {
+      if (!this.interval || this.paused || this.clicking || exempt(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+    }, true);
+    document.addEventListener("keydown", (e) => {
+      if (!this.interval || this.paused || (e.key !== " " && e.key !== "Enter")) return;
+      if (e.target.matches?.("input, select, textarea")) return; // target may be the document itself
+      e.preventDefault();
+      this.select();
+    });
+  },
+};
+
+// ======================================================================
+// Demo mode (?demo=1): type what the partner said instead of speaking it,
+// and load a synthetic week of conversation to show board learning.
+// ======================================================================
+
+const DEMO_LINES = [
+  "Aarav, khana khaoge? Dal chawal hai, ya khichdi bana doon?",
+  "Theek hai. Saath mein dahi bhi doon?",
+  "Aur kal doctor ke yahan chalna hai, yaad hai na?",
+  "ನಮಸ್ಕಾರ, ಶ್ರೀ ಸಾಯಿ ಮೆಡಿಕಲ್ಸ್. ಹೇಳಿ ಸರ್, ಏನು ಬೇಕು?",
+  "500 mg ಆ, 650 ಆ?",
+  "ಸರಿ. ಹೋಮ್ ಡೆಲಿವರಿ ಬೇಕಾ? ಅಡ್ರೆಸ್ ಹೇಳಿ.",
+];
+
+async function demoPartnerSays(text) {
+  text = text.trim();
+  if (!text) return;
+  const t0 = performance.now();
+  try {
+    await postJSON("/api/demo/partner", { text });
+  } catch {}
+  debug.note("heard", `typed: "${text}"`);
+  showPartnerLine(text);
+  const data = await suggestReplies().catch((err) => toast(err.message));
+  debug.note("timing", `replies ${Math.round(performance.now() - t0)} ms`);
+  return data;
+}
+
+function initDemo() {
+  if (!new URLSearchParams(location.search).has("demo")) return;
+  $("demo-panel").hidden = false;
+  $("demo-lines").replaceChildren(
+    ...DEMO_LINES.map((line) => {
+      const b = el("button", "demo-line", line.length > 34 ? line.slice(0, 32) + "…" : line);
+      b.type = "button";
+      b.title = line;
+      b.addEventListener("click", () => demoPartnerSays(line));
+      return b;
+    })
+  );
+  $("demo-input").addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    demoPartnerSays(e.target.value);
+    e.target.value = "";
+  });
+  $("demo-week").addEventListener("click", async () => {
+    try {
+      const data = await thinking(() => postJSON(`/api/demo/seed?lang=${encodeURIComponent(state.lang)}`, {}));
+      showIdeas(data.pending);
+      if (!data.pending.length) toast("No new ideas (already added or rejected?)");
+    } catch (err) {
+      toast(err.message, 4000);
+    }
+  });
+}
+
+// ======================================================================
 // Wiring
 // ======================================================================
 
 function setMode(mode) {
   state.mode = mode;
+  settings.mode = mode;
+  saveSettings();
   document.querySelectorAll(".mode").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
   $("phone-banner").hidden = mode !== "phone";
   if (mic.on) console.log(`[listen] mode=${mode}`);
 }
 
 function init() {
+  loadSettings();
+  state.partnerSetting = settings.partner || "";
   $("partner-picker").addEventListener("change", (e) => setPartnerSetting(e.target.value));
+  $("settings-btn").addEventListener("click", openSettings);
+  document.querySelectorAll("[data-close]").forEach((n) => n.addEventListener("click", closeSettings));
+  $("show-overlay").addEventListener("click", () => ($("show-overlay").hidden = true));
+  window.addEventListener("online", () => setOffline(false));
+  window.addEventListener("offline", () => setOffline(true));
+  setOffline(!navigator.onLine);
+  wireSegments();
+  scan.init();
+  initDemo();
   $("lang-picker").addEventListener("change", (e) => {
     loadSymbols(e.target.value).catch((err) => toast(err.message));
   });
@@ -1105,6 +1474,8 @@ function init() {
   $("unhide-btn").addEventListener("click", unhideAll);
   $("forget-btn").addEventListener("click", forgetConversations);
   debug.init();
+  setMode(settings.mode === "phone" ? "phone" : "listen");
+  applySettings();
 
   refreshStatus();
   loadSymbols().catch((err) => {
@@ -1114,3 +1485,8 @@ function init() {
 }
 
 init();
+
+// Installable app: the page and the board keep loading without internet.
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch((err) => console.warn("[pwa] not registered:", err.message));
+}
