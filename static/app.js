@@ -321,16 +321,19 @@ function stopSpeaking() {
   if (state.speaking) sleep(300).then(() => token === speakToken && setSpeaking(false));
 }
 
-// Plays text through Timbre. Resolves after playback ends plus 300 ms (half-duplex margin).
+// Plays text through Timbre. Resolves after playback ends plus 300 ms (half-duplex margin):
+// true if it played to the end, false if Stop (or another phrase) cut it short.
 async function speak(text, lang = state.lang) {
   stopSpeaking();
   const token = ++speakToken;
   setSpeaking(true);
   try {
     const url = await fetchSpeech(text, lang);
-    if (token !== speakToken) return;
+    if (token !== speakToken) return false;
     await playUrl(url);
+    const finished = token === speakToken; // stopSpeaking() bumps the token
     await sleep(300);
+    return finished;
   } finally {
     if (token === speakToken) setSpeaking(false);
   }
@@ -460,6 +463,10 @@ function clearMessage() {
   state.selected = [];
   $("typed").value = "";
   selectionChanged();
+}
+
+function messageSnapshot() {
+  return JSON.stringify([state.selected, $("typed").value]);
 }
 
 function typedText() {
@@ -727,10 +734,17 @@ async function onSpeakCard(btn, text, lang, shownText = text) {
   });
   btn.classList.add("playing");
   label(btn, true);
+  const before = messageSnapshot();
   try {
-    await speak(text, lang);
+    const finished = await speak(text, lang);
     logSpoken(shownText);
     remember(shownText, text, lang);
+    // Said in full: start the next message from an empty bar, with no extra taps.
+    // Not after Stop (they may want to fix it), and not if they started a new message meanwhile.
+    if (finished && messageSnapshot() === before) {
+      clearMessage();
+      renderReplies();
+    }
   } catch (err) {
     console.warn("[speak] failed:", err.message);
     toast(err.message, 4000);
