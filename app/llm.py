@@ -131,9 +131,12 @@ Then:
     or about tomorrow's doctor visit?). When another tile gives the time its own idea (doctor + tomorrow), there is no fork.
   * a place + a feeling (hospital + scared: scared of going, or scared of something at the hospital?)
   * a tile with a personal meaning listed below
+  * taps that contradict each other (two answers that exclude each other, e.g. both choices plus "nothing")
   Do NOT ask when the partner's line and the tiles already make the meaning clear. Asking costs {name} a tap.
-  clarify.question: one short question to {name}, in the second person ("Do you mean ...?"), never as {name} speaking.
-  clarify.options: 2-3 very short answers, each NAMING one of the competing readings ("Pain now" / "About tomorrow"), or "Yes"/"No" in {language} for a plain yes/no question.
+  clarify.question: one short question to {name}, addressing {name} as "you", never as {name} speaking.
+    Write ALL of it in {language}, its opening words included; never start in one language and switch to another.
+  clarify.options: 2-3 very short answers in {language}, each NAMING one of the competing readings
+    (for pain + tomorrow: one option for "pain now", one for "about tomorrow"), or yes/no for a plain yes/no question.
 - quick_replies: [].
 
 Case C: a clarification answer is given.
@@ -249,6 +252,9 @@ def response_schema(language_desc: str, partner_desc: str | None) -> dict:
                                       if partner_desc else "Always [] here.")
     props["translation"]["description"] = (f"The partner's latest line translated into {language_desc}."
                                            if partner_desc else 'Always "" here.')
+    ask = props["clarify"]["anyOf"][1]["properties"]
+    ask["question"]["description"] = f"A question to the user, written entirely in {language_desc}."
+    ask["options"]["description"] = f"Short answers in {language_desc}, one per reading."
     return schema
 
 
