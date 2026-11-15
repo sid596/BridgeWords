@@ -3,12 +3,12 @@ yes,Quick replies,Yes,Haan,हाँ,ಹೌದು,होय,✅,Always visible
 no,Quick replies,No,Nahi,नहीं,ಇಲ್ಲ,नाही,❌,Always visible
 wait,Quick replies,Wait,Ruko,रुको,ಸ್ವಲ್ಪ ಇರಿ,थांबा,✋,Always visible: buys time while the user builds a reply
 later,Quick replies,Later,Baad mein,बाद में,ನಂತರ,नंतर,⏳,
-something_else,Quick replies,Something else,Kuch aur,कुछ और,ಬೇರೆ ಏನೋ,दुसरं काहीतरी,❓,Shown on every suggested-reply row so the user is never boxed in
-dont_know,Quick replies,I don't know,Pata nahi,पता नहीं,ಗೊತ್ತಿಲ್ಲ,माहीत नाही,🤷,
-thank_you,Quick replies,Thank you,Thank you,धन्यवाद,ಧನ್ಯವಾದ,धन्यवाद,🙏,
-repeat,Quick replies,Please say again,Phir se bolo,फिर से बोलो,ಮತ್ತೆ ಹೇಳಿ,पुन्हा सांगा,🔁,
+something_else,Quick replies,Something Else,Kuch Aur,कुछ और,ಬೇರೆ ಏನೋ,दुसरं काहीतरी,❓,Shown on every suggested-reply row so the user is never boxed in
+dont_know,Quick replies,I Don't Know,Pata Nahi,पता नहीं,ಗೊತ್ತಿಲ್ಲ,माहीत नाही,🤷,
+thank_you,Quick replies,Thank You,Thank You,धन्यवाद,ಧನ್ಯವಾದ,धन्यवाद,🙏,
+repeat,Quick replies,Please Say Again,Phir se Bolo,फिर से बोलो,ಮತ್ತೆ ಹೇಳಿ,पुन्हा सांगा,🔁,
 more,Quick replies,More,Aur,और,ಇನ್ನೂ,अजून,➕,
-enough,Quick replies,Enough / stop,Bas,बस,ಸಾಕು,पुरे,🛑,
+enough,Quick replies,Enough / Stop,Bas,बस,ಸಾಕು,पुरे,🛑,
 happy,Feelings,Happy,Khush,खुश,ಸಂತೋಷ,आनंदी,😊,
 sad,Feelings,Sad,Udaas,उदास,ದುಃಖ,दुःखी,😢,
 scared,Feelings,Scared,Darr,डर,ಭಯ,भीती,😨,
@@ -22,23 +22,23 @@ thirsty,Food and drink,Thirsty,Pyaas,प्यास,ಬಾಯಾರಿಕೆ,�
 water,Food and drink,Water,Paani,पानी,ನೀರು,पाणी,💧,
 tea,Food and drink,Tea,Chai,चाय,ಚಹಾ,चहा,☕,
 milk,Food and drink,Milk,Doodh,दूध,ಹಾಲು,दूध,🥛,
-dal_chawal,Food and drink,Dal rice,Dal chawal,दाल चावल,ಅನ್ನ ಸಾರು,वरण भात,🍛,Scenario 1
+dal_chawal,Food and drink,Dal Rice,Dal Chawal,दाल चावल,ಅನ್ನ ಸಾರು,वरण भात,🍛,Scenario 1
 khichdi,Food and drink,Khichdi,Khichdi,खिचड़ी,ಕಿಚಡಿ,खिचडी,🥣,Scenario 1
 roti,Food and drink,Roti,Roti,रोटी,ಚಪಾತಿ,पोळी,🫓,
 fruit,Food and drink,Fruit,Phal,फल,ಹಣ್ಣು,फळ,🍌,
-sweet,Food and drink,Something sweet,Kuch meetha,मीठा,ಸಿಹಿ,गोड,🍬,
-soft_food,Food and drink,Soft food,Naram khana,नरम खाना,ಮೆತ್ತನೆಯ ಊಟ,मऊ जेवण,🥄,
-not_hungry,Food and drink,Not hungry,Bhookh nahi,भूख नहीं,ಹಸಿವಿಲ್ಲ,भूक नाही,🚫,Scenario 1
+sweet,Food and drink,Something Sweet,Kuch Meetha,मीठा,ಸಿಹಿ,गोड,🍬,
+soft_food,Food and drink,Soft Food,Naram Khana,नरम खाना,ಮೆತ್ತನೆಯ ಊಟ,मऊ जेवण,🥄,
+not_hungry,Food and drink,Not Hungry,Bhookh Nahi,भूख नहीं,ಹಸಿವಿಲ್ಲ,भूक नाही,🚫,Scenario 1
 pain,Health and body,Pain,Dard,दर्द,ನೋವು,दुखतंय,🤕,
-headache,Health and body,Headache,Sar dard,सिरदर्द,ತಲೆನೋವು,डोकेदुखी,🤯,
-stomach_ache,Health and body,Stomach ache,Pet dard,पेट दर्द,ಹೊಟ್ಟೆ ನೋವು,पोटदुखी,🤢,
+headache,Health and body,Headache,Sar Dard,सिरदर्द,ತಲೆನೋವು,डोकेदुखी,🤯,
+stomach_ache,Health and body,Stomach Ache,Pet Dard,पेट दर्द,ಹೊಟ್ಟೆ ನೋವು,पोटदुखी,🤢,
 medicine,Health and body,Medicine,Dawai,दवाई,ಔಷಧಿ,औषध,💊,Scenario 2
 doctor,Health and body,Doctor,Doctor,डॉक्टर,ವೈದ್ಯರು,डॉक्टर,🩺,
 hospital,Health and body,Hospital,Hospital,अस्पताल,ಆಸ್ಪತ್ರೆ,दवाखाना,🏥,Ambiguity demo: hospital + pain + tomorrow
-feel_cold,Health and body,Feeling cold,Thand lag rahi,ठंड लग रही है,ಚಳಿ,थंडी वाजतेय,🥶,
-feel_hot,Health and body,Feeling hot,Garmi lag rahi,गर्मी लग रही है,ಸೆಖೆ,उकडतंय,🥵,
+feel_cold,Health and body,Feeling Cold,Thand Lag Rahi,ठंड लग रही है,ಚಳಿ,थंडी वाजतेय,🥶,
+feel_hot,Health and body,Feeling Hot,Garmi Lag Rahi,गर्मी लग रही है,ಸೆಖೆ,उकडतंय,🥵,
 toilet,Health and body,Toilet,Toilet,टॉयलेट,ಶೌಚಾಲಯ,टॉयलेट,🚻,
-breathing,Health and body,Hard to breathe,Saans nahi aa rahi,सांस लेने में तकलीफ,ಉಸಿರಾಟದ ತೊಂದರೆ,श्वास घ्यायला त्रास,😮‍💨,Urgent tile: always speaks immediately with no LLM step
+breathing,Health and body,Hard to Breathe,Saans Nahi Aa Rahi,सांस लेने में तकलीफ,ಉಸಿರಾಟದ ತೊಂದರೆ,श्वास घ्यायला त्रास,😮‍💨,Urgent tile: always speaks immediately with no LLM step
 me,People,Me,Main,मैं,ನಾನು,मी,🙋,
 mummy,People,Mummy,Mummy,मम्मी,ಅಮ್ಮ,आई,👩,
 papa,People,Papa,Papa,पापा,ಅಪ್ಪ,बाबा,👨,
@@ -54,15 +54,15 @@ bed,Places and things,Bed,Bed,बिस्तर,ಹಾಸಿಗೆ,बेड,�
 phone,Places and things,Phone,Phone,फ़ोन,ಫೋನ್,फोन,📱,
 tv,Places and things,TV,TV,टीवी,ಟಿವಿ,टीव्ही,📺,
 fan,Places and things,Fan,Pankha,पंखा,ಫ್ಯಾನ್,पंखा,🌀,
-school,Places and things,School / college,School / college,स्कूल,ಶಾಲೆ,शाळा,🏫,
-want,Needs and time,I want,Chahiye,चाहिए,ಬೇಕು,हवंय,👉,
-dont_want,Needs and time,I don't want,Nahi chahiye,नहीं चाहिए,ಬೇಡ,नको,🙅,
+school,Places and things,School / College,School / College,स्कूल,ಶಾಲೆ,शाळा,🏫,
+want,Needs and time,I Want,Chahiye,चाहिए,ಬೇಕು,हवंय,👉,
+dont_want,Needs and time,I Don't Want,Nahi Chahiye,नहीं चाहिए,ಬೇಡ,नको,🙅,
 help,Needs and time,Help,Madad,मदद,ಸಹಾಯ,मदत,🆘,Urgent tile: always speaks immediately with no LLM step
-go,Needs and time,Go,Jaana hai,जाना,ಹೋಗಬೇಕು,जायचंय,🚶,
-sit,Needs and time,Sit,Baithna hai,बैठना,ಕೂರಬೇಕು,बसायचंय,🪑,
-sleep,Needs and time,Sleep,Sona hai,सोना,ಮಲಗಬೇಕು,झोपायचंय,🛌,
-turn_me,Needs and time,Change my position,Karvat badlo,करवट बदलो,ಮಗ್ಗುಲು ಬದಲಿಸಿ,कूस बदला,🔄,
-call,Needs and time,Call someone,Phone karo,फ़ोन करो,ಕರೆ ಮಾಡಿ,फोन करा,📞,
+go,Needs and time,Go,Jaana Hai,जाना,ಹೋಗಬೇಕು,जायचंय,🚶,
+sit,Needs and time,Sit,Baithna Hai,बैठना,ಕೂರಬೇಕು,बसायचंय,🪑,
+sleep,Needs and time,Sleep,Sona Hai,सोना,ಮಲಗಬೇಕು,झोपायचंय,🛌,
+turn_me,Needs and time,Change My Position,Karvat Badlo,करवट बदलो,ಮಗ್ಗುಲು ಬದಲಿಸಿ,कूस बदला,🔄,
+call,Needs and time,Call Someone,Phone Karo,फ़ोन करो,ಕರೆ ಮಾಡಿ,फोन करा,📞,
 now,Needs and time,Now,Abhi,अभी,ಈಗ,आत्ता,⏱️,
 today,Needs and time,Today,Aaj,आज,ಇವತ್ತು,आज,📅,
 tomorrow,Needs and time,Tomorrow,Kal,कल,ನಾಳೆ,उद्या,🌅,Hindi कल means both yesterday and tomorrow: a real ambiguity the app should confirm Marathi उद्या is unambiguous.
