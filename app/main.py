@@ -578,10 +578,32 @@ def learn_reject(ref: TileRef):
     return {"ok": True}
 
 
-@app.post("/api/learn/forget")
-def learn_forget():
-    """Wipe the conversation log and pending ideas (accepted tiles stay)."""
-    learning.forget()
+def fixed_phrase_keys() -> set[str]:
+    """TTS cache keys of the fixed phrases (urgent tiles, Wait) in every language they exist in."""
+    keys = set()
+    for phrase in load_json("phrases.json").values():
+        if isinstance(phrase, dict):
+            keys |= {tts_cache_key(text, lang) for lang, text in phrase.items()
+                     if lang in SPEECH and isinstance(text, str) and text}
+    return keys
+
+
+@app.post("/api/reset")
+def reset_everything():
+    """Forget everything about this person: conversation log, tile ideas, their own tiles, hidden tiles,
+    their cloned voice and the audio of everything said. The starter board stays, and so does the
+    audio of the fixed phrases, so urgent tiles still speak offline straight after a reset."""
+    learning.reset()
+    voice_path().unlink(missing_ok=True)
+    keep = fixed_phrase_keys()  # computed after the voice is gone: standard-voice phrases
+    _tts_memory.clear()
+    removed = 0
+    if TTS_CACHE_DIR.exists():
+        for f in TTS_CACHE_DIR.glob("*.wav"):
+            if f.stem not in keep:
+                f.unlink(missing_ok=True)
+                removed += 1
+    log.info("reset: everything forgotten (%d cached audio files removed)", removed)
     return {"ok": True}
 
 

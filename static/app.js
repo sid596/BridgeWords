@@ -1160,11 +1160,29 @@ async function unhideAll() {
   setEditMode(true);
 }
 
-async function forgetConversations() {
+// Forget everything: back to a fresh install (starter board, default settings, standard voice).
+async function forgetEverything() {
   if (!confirm(t("forget_confirm"))) return;
-  await postJSON("/api/learn/forget", {}).catch((err) => toast(err.message));
-  showIdeas([]);
-  toast(t("forgotten"));
+  try {
+    await postJSON("/api/reset", {});
+  } catch (err) {
+    return toast(err.message, 5000);
+  }
+  try {
+    ["bw-settings", "bw-recent", "bw-debug"].forEach((k) => localStorage.removeItem(k));
+    sessionStorage.setItem("bw-reset", "1"); // show the "forgotten" note after the reload
+  } catch {}
+  location.reload();
+}
+
+function noteAfterReset() {
+  try {
+    if (!sessionStorage.getItem("bw-reset")) return;
+    sessionStorage.removeItem("bw-reset");
+  } catch {
+    return;
+  }
+  toast(t("forgotten"), 4000);
 }
 
 // ======================================================================
@@ -1630,16 +1648,18 @@ function init() {
   $("edit-btn").addEventListener("click", () => setEditMode(true));
   $("edit-done").addEventListener("click", () => setEditMode(false));
   $("unhide-btn").addEventListener("click", unhideAll);
-  $("forget-btn").addEventListener("click", forgetConversations);
+  $("forget-btn").addEventListener("click", forgetEverything);
   debug.init();
   setMode(settings.mode === "phone" ? "phone" : "listen");
   applySettings();
 
   refreshStatus();
-  loadSymbols().catch((err) => {
-    console.error(err);
-    toast("Could not load the board. Is the server running?");
-  });
+  loadSymbols()
+    .then(noteAfterReset)
+    .catch((err) => {
+      console.error(err);
+      toast("Could not load the board. Is the server running?");
+    });
 }
 
 init();

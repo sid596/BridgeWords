@@ -93,14 +93,10 @@ def add_event(kind: str, text: str) -> None:
     update(fn)
 
 
-def forget() -> None:
-    """Wipe the conversation log and pending ideas. Accepted tiles stay."""
-    def fn(store):
-        store["events"] = []
-        store["pending"] = []
-        store["analysed_partner"] = store["partner_total"]
-
-    update(fn)
+def reset() -> None:
+    """Back to a fresh install: no conversation log, no tile ideas, no own tiles, nothing hidden."""
+    with _lock:
+        store_path().unlink(missing_ok=True)
 
 
 # ---------- Tiles ----------

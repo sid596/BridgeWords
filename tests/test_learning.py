@@ -4,7 +4,7 @@ import json
 import httpx
 import pytest
 
-from app import learning
+from app import learning, main
 from tests.conftest import chat_reply
 
 PARACHUTE = {
@@ -150,14 +150,35 @@ def test_learning_can_be_switched_off_in_the_profile(client, chat, monkeypatch):
     assert learning.load()["events"] == []
 
 
-def test_forget_wipes_the_log_but_keeps_accepted_tiles(client, chat):
+def test_forget_everything_resets_to_the_starter_board(client, chat):
     log_lines(client, SKYDIVING)
     chat.result = proposals({**PARACHUTE, "evidence": SKYDIVING[:2]})
     client.post("/api/learn/propose")
     client.post("/api/learn/accept", json={"id": "parachute"})
-    client.post("/api/learn/forget")
-    assert learning.load()["events"] == []
-    assert "parachute" in tile_ids(client)
+    client.post("/api/tiles/hide", json={"id": "khichdi"})
+    starter = len(main.load_symbols())
+    assert "parachute" in tile_ids(client) and "khichdi" not in tile_ids(client)
+
+    assert client.post("/api/reset").json() == {"ok": True}
+    store = learning.load()
+    assert store["events"] == [] and store["pending"] == [] and store["tiles"] == [] and store["hidden"] == []
+    ids = tile_ids(client)
+    assert "parachute" not in ids and "khichdi" in ids and len(ids) == starter
+    assert {"help", "breathing"} <= set(ids)
+
+
+def test_forget_everything_deletes_the_voice_and_spoken_audio_but_keeps_urgent_audio(client, tmp_path):
+    urgent = main.fixed_phrase_keys()  # standard voice: what the urgent tiles use after a reset
+    main.TTS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    for key in list(urgent)[:2] + ["somethingthepersonsaid"]:
+        (main.TTS_CACHE_DIR / f"{key}.wav").write_bytes(b"RIFF")
+    main.save_voice({"enabled": True, "speaker_embedding": {"embedding": "x", "shape": [1], "dtype": "f"}})
+
+    client.post("/api/reset")
+    assert not main.voice_path().exists()
+    left = {f.stem for f in main.TTS_CACHE_DIR.glob("*.wav")}
+    assert "somethingthepersonsaid" not in left
+    assert left == set(list(urgent)[:2])  # urgent tiles still speak offline after a reset
 
 
 # ---------- Hiding tiles (pasta instead of khichdi) ----------

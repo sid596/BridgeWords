@@ -53,7 +53,7 @@ Everybody's life is different, and a fixed board can't know that this user skydi
 - **The AI proposes, the user decides.** Ideas appear as "✨ New tile ideas: 🪂 Parachute [+ Add] [✕]". Nothing is added by itself, which is the same principle as Speak.
 - **No invented interests.** Each idea must quote at least 2 real lines from the log, or something the user typed. The server checks that the quotes exist, and drops anything already on the board, rejected before, or private (phone numbers, addresses, money).
 - **Tiles never move on their own.** AAC users rely on motor memory, so new tiles go into a **My tiles** tab. **✏️ Edit** lets the user hide starter tiles they never use (khichdi) and remove their own. Urgent tiles can't be hidden.
-- **Private and local.** The log and learned tiles live in `user_data/`, which is git-ignored and never committed. **🧹 Forget conversations** wipes the log. Set `"learning": false` in `data/profile.json` to turn learning off.
+- **Private and local.** The log and learned tiles live in `user_data/`, which is git-ignored and never committed. **🧹 Forget Everything** (Settings) returns BridgeWords to a fresh install: it deletes the conversation log, tile ideas, added and hidden tiles, the cloned voice, the cached audio of everything said, Said Before and all settings. The starter board stays, and so does the urgent tiles' audio, so they still speak offline. Set `"learning": false` in `data/profile.json` to turn learning off.
 
 Tested on a synthetic week of conversation: it proposed 🪂 Parachute, 🩼 Crutch (बैसाखी) and 🍝 Pasta, and ignored a phone number, an address and a one-off zoo trip.
 
@@ -145,7 +145,7 @@ Code: `app/main.py` (API), `app/llm.py` (prompt + validation), `app/learning.py`
 python -m pytest -q
 ```
 
-102 tests, all offline: Gnani and OpenAI are mocked, and a guard fails any test that tries to reach the network. They cover suggestion JSON validation, the fallback for every kind of AI failure, urgent tiles (fixed phrase, no AI, cached), TTS caching and errors, the listening endpoint, board learning (proposals never auto-add, evidence checks, reject/hide/forget, privacy switch), and languages (translation only when needed, replies spoken in the partner's language, all 10 Gnani languages, complete interface text in every board language).
+107 tests, all offline: Gnani and OpenAI are mocked, and a guard fails any test that tries to reach the network. They cover suggestion JSON validation, the fallback for every kind of AI failure, urgent tiles (fixed phrase, no AI, cached), TTS caching and errors, the listening endpoint, board learning (proposals never auto-add, evidence checks, reject/hide/forget everything, privacy switch), and languages (translation only when needed, replies spoken in the partner's language, all 10 Gnani languages, complete interface text in every board language).
 
 ## Measured latency (Mac, home Wi-Fi, warm)
 
