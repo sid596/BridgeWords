@@ -59,7 +59,9 @@ Tested on a synthetic week of conversation: it proposed 🪂 Parachute, 🩼 Cru
 
 ## Demo mode
 
-Open `/?demo=1` for a strip where you type what the partner said (or tap a scripted line from both scenarios), plus **Load sample week**, which loads a fictional week of conversation so the board-learning ideas (🪂 Parachute, 🩼 Crutch, 🍝 Pasta) appear on cue. It's useful for rehearsing, recording the video, and judges trying it without a second person.
+The normal link (no `?demo=1`) is the full app: tap **Start Listening**, talk, and Prisma hears the partner.
+
+`/?demo=1` is the **same app** with one extra strip on top. Listening, Prisma and Timbre all still work. The strip lets you type what the partner said (or tap a scripted line from both scenarios), plus **Load sample week**, which loads a fictional week of conversation so the board-learning ideas (🪂 Parachute, 🩼 Crutch, 🍝 Pasta) appear on cue. It's useful for rehearsing, recording the video, and **judges trying it without a second person, in a noisy room, or with the mic blocked**.
 
 ## Run it
 
@@ -95,8 +97,8 @@ Browsers only allow the mic on `https` or `localhost`. Run `ngrok http 8000` in 
 
 ## Using it
 
-- **Board:** tap tiles. They appear as chips in the message bar. Then tap **Suggest** for up to 3 sentences, and **🔊 Speak** to say one.
-- **Listen mode:** tap **🎙 Start listening**. When the partner stops talking, the top row updates with replies to what they said. The status pill shows *listening → hearing → thinking → ready*.
+- **Board:** tap tiles. They appear as chips in the message bar. Then tap **Suggest** for up to 3 sentences, and **🔊 Speak** to say one. Once it's spoken, the message bar clears for the next message, and the sentence stays under **Said Before**.
+- **Listen mode:** tap **🎙 Start listening** once. The mic stays on and notices by itself when the partner stops talking (about 1.2 s of quiet), so nobody taps to end a turn. The top row then updates with replies to what they said. The status pill shows *listening → hearing → thinking → ready*.
 - **Phone mode:** the same, for a call on speaker next to the tablet. The mic is a bit more sensitive in this mode.
 - **Language:** Hinglish, हिन्दी, English, ಕನ್ನಡ, मराठी. This changes the tile labels, the suggestions, the listening languages and the voice.
 - **Timings:** tap the status pill (or open `/?debug=1`) for an on-screen strip with the mic level, the speech threshold, what Prisma heard, and the time for each step. It works on a tablet without dev tools. The console (Cmd+Option+J) has the same details.
