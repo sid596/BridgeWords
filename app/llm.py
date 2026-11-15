@@ -3,6 +3,7 @@
 The model only proposes. The user picks, and nothing is spoken until they tap Speak.
 Every response is validated here; on any error the caller falls back to plain tile labels.
 """
+import asyncio
 import json
 import logging
 import unicodedata
@@ -61,6 +62,7 @@ CORE RULES
 
 LANGUAGE
 - Write sentences, short labels, the clarifying question and its options in {language}. Only "spoken" is in the partner's language.
+- The examples in this prompt are mostly Hinglish. They show the IDEA only: always write in {language}, never in the examples' language.
 - If the partner's latest line is code-mixed Hinglish and the user's language is Hindi or Hinglish, reply in Hinglish (Roman script).
 - Write as {name}, in the first person. {name} is {gender}: use {gender} first-person grammar where the language marks gender.
 
@@ -68,10 +70,25 @@ LANGUAGE
 WHAT TO RETURN (strict JSON: quick_replies, sentences, spoken, clarify, translation)
 
 Case A: no selected tiles and no typed text (the partner just spoke).
-- Return only quick_replies: up to 5 options that directly answer the partner's latest line.
-  Fewer is better: 2-4 good options beat 5 with filler. Never pad with unrelated tiles.
-- Prefer tile ids from the catalogue below. If no tile fits, use a short label (1-4 words) in {language}.
+- Answer ONLY partner_latest_line. earlier_partner_lines are context; they were already answered.
+- Return only quick_replies: 2-5 ANSWERS that {name} could tap to reply to the partner's latest line.
+- Never offer "help" or "breathing" (they have their own button). If you offer "repeat", don't also write "say again".
+  Each one must make sense said on its own, right after the partner's line. Topic words are not answers:
+  "Aaj school mein kya hua?" -> NOT ["school", "teacher", "friend"].
+- Cover different directions, so {name} is never steered: a yes-ish answer, a no-ish answer, and "not now" / "don't know"
+  when they fit. Never offer two answers that mean the same thing. 2-4 good answers beat 5 with filler.
+- Choice question ("X ya Y?"): offer X and Y themselves, then one way out ("Neither", "not_hungry", "later", ...).
+- Yes/no question: "yes" and "no", plus at most one answer that adds something useful from the question itself.
+- Open question (what / how / why / tell me): short starters in different directions, e.g. "Aaj school mein kya hua?" ->
+  ["Achha din tha", "Bura din tha", "Kuch mazedaar hua", "Baad mein bataunga"]. "How are you?" -> ["Good", "Not well", "tired"].
+- Use a tile id only when that tile, alone, IS a natural answer (e.g. "khichdi" for "Dal chawal ya khichdi?").
+  Otherwise write a short label (1-4 words) in {language}, as {name} would say it, with spaces and normal capitals.
+  Never invent ids such as "theek_hun".
 - Examples: "Dal chawal ya khichdi?" -> ["dal_chawal", "khichdi", "not_hungry", "later"]. "500 mg aa, 650 aa?" -> ["500", "650", "dont_know"].
+  "TV pe kya dekhna hai? Cricket ya movie?" -> ["Cricket", "Movie", "Kuch nahi"].
+  A shop asks what {name} needs ("Hello, Sri Sai Medicals. Heli sir, enu beku?") -> the things that shop sells, plus "repeat":
+  ["medicine", "repeat"]. No greetings, no "talk to someone else".
+  "Home delivery beka? Address heli." -> ["Yes, deliver", "I will collect"] in {language}. "Kisko phone karna hai?" -> ["mummy", "papa", "friend", "Kisi ko nahi"].
 - If the partner asked a negative question ("Don't you want to go out?"), do NOT use bare "yes"/"no": use explicit labels such as "I want to go" / "I don't want to go".
 - If the latest line is only filler or acknowledgement ("haan haan theek hai"), or not addressed to the user, return quick_replies: [].
 - Never include "something_else" or "wait"; the app always adds them.
@@ -81,17 +98,20 @@ Case B: the user selected tiles and/or typed text.
 - Return up to 3 short first-person sentences. EACH sentence must express ALL the selected tiles together
   (khichdi + soft_food -> "Khichdi chahiye, thodi soft." not one sentence per tile).
 - The sentences are alternative WORDINGS of the SAME meaning (e.g. plain, polite, very short). Never offer different meanings to choose from.
-- Use the partner lines as context: a tile often answers the partner's question (partner asked "dahi bhi doon?", tiles no + water -> "Nahi, dahi nahi. Bas paani de do.").
+- Use partner_latest_line (and earlier_partner_lines) as context: a tile often answers the partner's question (partner asked "dahi bhi doon?", tiles no + water -> "Nahi, dahi nahi. Bas paani de do.").
 - Use only what the tiles, typed text and conversation support. Don't add reasons, feelings, quantities, times or people that were not selected.
   Every sentence (including the 2nd and 3rd) must stay inside the selection. Forbidden example: tiles medicine + "para"
   -> "I need medicine for pain" (pain was never selected). Allowed: "I need paracetamol." / "Paracetamol, please."
 - Typed text may be an abbreviation. If the context makes a reading likely ("para" at a chemist -> paracetamol), use the expanded word; the user will check it.
 - AMBIGUITY: before answering, ask yourself whether the selection could reasonably mean two different things.
   If yes, return clarify and NO sentences. Typical traps:
-  * a body/feeling tile + a time tile (pain + tomorrow: pain now, or about tomorrow's doctor visit?)
+  * a body/feeling tile + a time tile (pain + tomorrow: pain now, or about tomorrow's doctor visit?).
+    ALWAYS clarify this one. Wrong: "Kal dard hai." Right: clarify "Dard abhi hai, ya kal ke baare mein?" ["Abhi dard hai", "Kal ke baare mein"].
   * a place + a feeling (hospital + scared: scared of going, or scared of something at the hospital?)
   * a tile with a personal meaning listed below
   * a partner question that the tiles answer in more than one way
+  Do NOT ask when the partner's line already makes the meaning clear: "How was physio?" + tired + pain
+  -> "I'm tired and in pain." Asking costs {name} a tap; ask only for a real fork in meaning.
   clarify.question: one short question to {name}, in the second person ("Do you mean ...?"), never as {name} speaking.
   clarify.options: 2-3 very short answers that NAME the alternatives ("Pain now" / "About tomorrow"), or "Yes"/"No" in {language} for a plain yes/no question.
 - quick_replies: [].
@@ -160,7 +180,8 @@ def build_system_prompt(profile: dict, language_desc: str, tiles: list[dict], pa
 
 def build_user_message(history, selected, typed, clarification, translate_this=None) -> str:
     msg = {
-        "partner_lines_oldest_first": history,
+        "earlier_partner_lines": history[:-1],
+        "partner_latest_line": history[-1] if history else "",
         "selected_tiles": selected,
         "typed_text": typed,
         "clarification": clarification,
@@ -283,14 +304,17 @@ def validate(raw: object, *, has_input: bool, clarified: bool,
 
 
 _client: httpx.AsyncClient | None = None
+_client_loop = None
 
 
 async def post_chat(url: str, body: dict, key: str) -> tuple[int, object]:
     """The only network call in this module (tests replace it).
     One shared client keeps the HTTPS connection warm, saving a TLS handshake per suggestion."""
-    global _client
-    if _client is None or _client.is_closed:
+    global _client, _client_loop
+    loop = asyncio.get_running_loop()
+    if _client is None or _client.is_closed or _client_loop is not loop:  # a client can't outlive its event loop
         _client = httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=5.0))
+        _client_loop = loop
     response = await _client.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
     try:
         return response.status_code, response.json()

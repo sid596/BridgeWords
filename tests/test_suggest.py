@@ -97,7 +97,7 @@ def test_request_contents_sent_to_llm(client, chat):
                                       "typed": "  abhi  ", "lang": "hi"})
     (_url, body, key), _ = chat.calls[0]
     user = json.loads(body["messages"][1]["content"])
-    assert user["partner_lines_oldest_first"] == history[-6:]                  # last 6 only
+    assert user["earlier_partner_lines"] + [user["partner_latest_line"]] == history[-6:]  # last 6 only
     assert [t["id"] for t in user["selected_tiles"]] == ["pain", "tomorrow"]   # unknown + duplicate dropped
     assert user["selected_tiles"][0]["label"] == label(client, "pain", "hi")   # label in the user's language
     assert user["typed_text"] == "abhi"
@@ -143,6 +143,13 @@ def test_partner_line_fallback_offers_basic_replies(client, chat):
     assert body["fallback"] is True
     assert body["quick_replies"] == ["yes", "no", "dont_know", "repeat"]
     assert body["sentences"] == []
+
+
+def test_reply_row_shows_words_and_never_urgent_tiles(client, chat):
+    chat.result = chat_reply({"quick_replies": ["khichdi", "help", "theek_hun", "Theek hun", "breathing"],
+                              "sentences": [], "spoken": [], "clarify": None, "translation": ""})
+    body = client.post("/api/suggest", json={"history": [LUNCH], "lang": "hinglish"}).json()
+    assert body["quick_replies"] == ["khichdi", "Theek hun"]  # ids kept, made-up ids readable, urgent dropped
 
 
 def test_nothing_to_suggest_makes_no_llm_call(client, chat):

@@ -416,6 +416,14 @@ def fallback(selected: list[dict], typed: str, spoken_lang: str | None = None, b
     return base
 
 
+def tidy_reply(reply: str, by_id: dict) -> str:
+    """A tile id stays an id; a label the model wrote is shown as words ("theek_hun" -> "Theek hun")."""
+    if reply in by_id:
+        return reply
+    text = " ".join(reply.replace("_", " ").split())
+    return text[:1].upper() + text[1:]
+
+
 @app.post("/api/suggest")
 async def suggest(req: SuggestRequest):
     lang = check_lang(req.lang)
@@ -451,6 +459,9 @@ async def suggest(req: SuggestRequest):
             clarification=req.clarification.model_dump() if req.clarification else None,
         )
         result["fallback"] = False
+        # Urgent tiles live in their own red corner; a reply row never offers them.
+        result["quick_replies"] = list(dict.fromkeys(tidy_reply(q, by_id) for q in result["quick_replies"]
+                                                     if q not in URGENT_IDS))
     except Exception as e:  # any LLM problem: never leave the user without words
         log.warning("LLM fallback (%s): %s", type(e).__name__, str(e)[:200])
         result = fallback(selected, typed, spoken_lang, by_id)
