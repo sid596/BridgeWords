@@ -271,3 +271,23 @@ def test_schema_names_the_language_of_each_field():
     schema = llm.response_schema("Hinglish", "Kannada")["schema"]["properties"]
     assert "Hinglish" in schema["sentences"]["description"]
     assert "Kannada" in schema["spoken"]["description"]
+
+
+def test_understanding_is_returned_but_never_a_sentence(client, chat):
+    chat.result = chat_reply({"understanding": "Partner offers food. I want khichdi.", "quick_replies": [],
+                              "sentences": ["Khichdi chahiye."], "spoken": [], "clarify": None, "translation": ""})
+    body = client.post("/api/suggest", json={"history": [LUNCH], "tiles": ["khichdi"], "lang": "hinglish"}).json()
+    assert body["sentences"] == ["Khichdi chahiye."]
+    assert body["understanding"] == "Partner offers food. I want khichdi."
+
+
+def test_sentence_building_thinks_a_little_quick_replies_do_not(client, chat):
+    reply = {"understanding": "", "quick_replies": ["yes"], "sentences": ["Haan."], "spoken": [], "clarify": None,
+             "translation": ""}
+    chat.result = chat_reply(reply)
+    client.post("/api/suggest", json={"history": [LUNCH], "lang": "hinglish"})
+    assert chat.calls[-1][0][1]["reasoning_effort"] == "none"
+    client.post("/api/suggest", json={"history": [LUNCH], "tiles": ["yes"], "lang": "hinglish"})
+    assert chat.calls[-1][0][1]["reasoning_effort"] == "low"
+    user = json.loads(chat.calls[-1][0][1]["messages"][1]["content"])
+    assert user["write_replies_in"].startswith("Hinglish")

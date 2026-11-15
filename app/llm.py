@@ -26,8 +26,9 @@ RESPONSE_SCHEMA = {
     "schema": {
         "type": "object",
         "additionalProperties": False,
-        "required": ["quick_replies", "sentences", "spoken", "clarify", "translation"],
+        "required": ["understanding", "quick_replies", "sentences", "spoken", "clarify", "translation"],
         "properties": {
+            "understanding": {"type": "string"},
             "quick_replies": {"type": "array", "items": {"type": "string"}},
             "sentences": {"type": "array", "items": {"type": "string"}},
             "spoken": {"type": "array", "items": {"type": "string"}},
@@ -56,7 +57,8 @@ You help {name}, who understands everything but cannot speak clearly, reply in a
 {name} decides. You never decide for {name}.
 
 CORE RULES
-- Never add facts, feelings or requests the user did not select.
+- Never add facts, feelings or requests the user did not select. Joining the selected tiles into what they naturally
+  mean together is not adding; inventing a reason, feeling, person, place or time is.
 - Prefer short sentences.
 - Ask when unsure.
 
@@ -94,30 +96,50 @@ Case A: no selected tiles and no typed text (the partner just spoke).
 - Never include "something_else" or "wait"; the app always adds them.
 - sentences: [] and clarify: null.
 
-Case B: the user selected tiles and/or typed text.
-- Return up to 3 short first-person sentences. EACH sentence must express ALL the selected tiles together
-  (khichdi + soft_food -> "Khichdi chahiye, thodi soft." not one sentence per tile).
-- The sentences are alternative WORDINGS of the SAME meaning (e.g. plain, polite, very short). Never offer different meanings to choose from.
-- Use partner_latest_line (and earlier_partner_lines) as context: a tile often answers the partner's question (partner asked "dahi bhi doon?", tiles no + water -> "Nahi, dahi nahi. Bas paani de do.").
-- Use only what the tiles, typed text and conversation support. Don't add reasons, feelings, quantities, times or people that were not selected.
-  Every sentence (including the 2nd and 3rd) must stay inside the selection. Forbidden example: tiles medicine + "para"
-  -> "I need medicine for pain" (pain was never selected). Allowed: "I need paracetamol." / "Paracetamol, please."
+Case B: the user selected tiles and/or typed text. INTERPRET, like a family member who knows {name} well.
+Tiles are telegraphic speech: keywords tapped one by one, in order, by someone for whom every tap takes effort.
+They are not a word list to translate one tile at a time.
+
+Think in "understanding" first (a few short lines, English is fine), then write:
+1. Partner: what does partner_latest_line say, ask or push for (a question, an offer, an instruction, a scolding, news)?
+   What kind of reply does it call for?
+2. Tiles, in tap order: group them into ideas. Tiles that belong together form one idea
+   (want + outside + friend + today -> "I want to go out with my friend today").
+   Words like no / dont_want / now / later combine into a stance (no + now + later -> "not now, later").
+   A time tile belongs to the idea it fits best.
+3. Message: the ONE thing {name} most likely means, as a reply to the partner. Often: stance -> reason -> request or plan.
+   Several ideas that can all be true at once are ONE message with several parts (refuse + reason + plan); say all of them.
+   Choose readings that make sense in real life ("I will have pain tomorrow" is not a sensible reading of pain + tomorrow).
+4. Check before writing:
+   - Coverage: every content tile (thing, person, place, action, feeling) is in the message. Dropping one loses what
+     {name} asked for: feel_cold + window means the window matters. Plain verbs and connecting words may be added.
+   - Nothing extra: no reason, feeling, person, place or time that no tile or typed word gave.
+   - Fork: in "understanding", write the two most likely readings of the taps ("Reading 1: ... Reading 2: ...").
+     If both would make the partner believe the same facts, it is one message: write it. If they would make the partner
+     believe DIFFERENT facts (pain right now vs. talking about tomorrow's visit), it is a fork -> clarify.
+     A reading that only adds detail to the other one is not a fork. Many tiles is not a fork.
+Then:
+- sentences: up to 3 wordings of that ONE message, as {name} would really say it to this partner, answering their line.
+  Use every idea, merged into natural phrases. Never list tiles: "I need chemist outside" is a tile list, not a sentence.
+  Give real variety: one plain, one shorter, one warmer or more polite. Never offer different meanings to choose from.
+- Method example (an illustration, not a template): partner "Chalo, ab padhai karo." tiles no, tired, sleep, later
+  -> understanding "Partner tells me to study. I refuse for now: I'm tired, I want to sleep, I'll study later."
+  -> "Abhi nahi, main thak gaya hoon. Pehle sona hai, padhai baad mein."
 - Typed text may be an abbreviation. If the context makes a reading likely ("para" at a chemist -> paracetamol), use the expanded word; the user will check it.
-- AMBIGUITY: before answering, ask yourself whether the selection could reasonably mean two different things.
-  If yes, return clarify and NO sentences. Typical traps:
-  * a body/feeling tile + a time tile (pain + tomorrow: pain now, or about tomorrow's doctor visit?).
-    ALWAYS clarify this one. Wrong: "Kal dard hai." Right: clarify "Dard abhi hai, ya kal ke baare mein?" ["Abhi dard hai", "Kal ke baare mein"].
+- CLARIFY instead of sentences only when step 4 found a fork. Typical forks:
+  * a feeling/body tile + a time tile with nothing else for the time to attach to (pain + tomorrow alone: pain now,
+    or about tomorrow's doctor visit?). When another tile gives the time its own idea (doctor + tomorrow), there is no fork.
   * a place + a feeling (hospital + scared: scared of going, or scared of something at the hospital?)
   * a tile with a personal meaning listed below
-  * a partner question that the tiles answer in more than one way
-  Do NOT ask when the partner's line already makes the meaning clear: "How was physio?" + tired + pain
-  -> "I'm tired and in pain." Asking costs {name} a tap; ask only for a real fork in meaning.
+  Do NOT ask when the partner's line and the tiles already make the meaning clear. Asking costs {name} a tap.
   clarify.question: one short question to {name}, in the second person ("Do you mean ...?"), never as {name} speaking.
-  clarify.options: 2-3 very short answers that NAME the alternatives ("Pain now" / "About tomorrow"), or "Yes"/"No" in {language} for a plain yes/no question.
+  clarify.options: 2-3 very short answers, each NAMING one of the competing readings ("Pain now" / "About tomorrow"), or "Yes"/"No" in {language} for a plain yes/no question.
 - quick_replies: [].
 
 Case C: a clarification answer is given.
 - The user already answered your question. Return sentences that follow that answer. clarify must be null.
+
+In every case, "understanding" comes first and is never shown as a reply.
 
 PERSONAL MEANINGS for {name} (respect them; when one applies and context is unclear, ask):
 {personal_meanings}
@@ -178,7 +200,7 @@ def build_system_prompt(profile: dict, language_desc: str, tiles: list[dict], pa
     )
 
 
-def build_user_message(history, selected, typed, clarification, translate_this=None) -> str:
+def build_user_message(history, selected, typed, clarification, translate_this=None, write_in=None) -> str:
     msg = {
         "earlier_partner_lines": history[:-1],
         "partner_latest_line": history[-1] if history else "",
@@ -188,6 +210,8 @@ def build_user_message(history, selected, typed, clarification, translate_this=N
     }
     if translate_this:
         msg["translate_this"] = translate_this
+    if write_in:
+        msg["write_replies_in"] = write_in  # restated per request: long prompts drift towards the partner's language
     return json.dumps(msg, ensure_ascii=False)
 
 
@@ -217,6 +241,8 @@ def response_schema(language_desc: str, partner_desc: str | None) -> dict:
     """The strict schema, with each field naming its language (the model reads these)."""
     schema = json.loads(json.dumps(RESPONSE_SCHEMA))
     props = schema["schema"]["properties"]
+    props["understanding"]["description"] = ("Written FIRST: what the partner wants, how the tiles group into ideas, "
+                                             "and the one message the user means (or the two readings, if it forks).")
     props["sentences"]["description"] = f"Sentences for the user to READ, written in {language_desc}."
     props["quick_replies"]["description"] = f"Tile ids, or short labels in {language_desc}."
     props["spoken"]["description"] = (f"The same sentences in {partner_desc}, in the same order (said aloud to the partner)."
@@ -330,6 +356,8 @@ async def suggest(*, profile, language_desc, catalogue, history, selected, typed
         raise ValueError("OPENAI_API_KEY is not set")
     base = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
     model = os.environ.get("LLM_MODEL", "gpt-5.4-mini")
+    if selected or typed:  # building a sentence needs real understanding; a quick reply needs speed
+        model = os.environ.get("LLM_COMPOSE_MODEL", "").strip() or model
 
     body = {
         "model": model,
@@ -337,12 +365,15 @@ async def suggest(*, profile, language_desc, catalogue, history, selected, typed
             {"role": "system", "content": build_system_prompt(profile, language_desc, catalogue, partner_desc,
                                                               want_spoken, want_translation)},
             {"role": "user", "content": build_user_message(history, selected, typed, clarification,
-                                                           history[-1] if want_translation and history else None)},
+                                                           history[-1] if want_translation and history else None,
+                                                           language_desc)},
         ],
         "response_format": {"type": "json_schema", "json_schema": response_schema(language_desc, partner_desc)},
         "max_completion_tokens": 1500,
     }
     effort = os.environ.get("LLM_REASONING_EFFORT", "none").strip()
+    if selected or typed:  # building a sentence: the user is waiting on Suggest, and a little thinking pays off
+        effort = os.environ.get("LLM_COMPOSE_REASONING_EFFORT", "low").strip()
     if effort:
         body["reasoning_effort"] = effort
 
@@ -359,5 +390,7 @@ async def suggest(*, profile, language_desc, catalogue, history, selected, typed
     raw = json.loads(message.get("content") or "")
     result = validate(raw, has_input=bool(selected or typed), clarified=bool(clarification),
                       want_spoken=want_spoken, want_translation=want_translation, script=script)
+    if isinstance(raw.get("understanding"), str):  # shown in the debug strip, never spoken
+        result["understanding"] = " ".join(raw["understanding"].split())[:600]
     log.info("LLM ok model=%s took=%.0fms", model, (time.perf_counter() - t0) * 1000)
     return result

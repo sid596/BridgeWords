@@ -496,7 +496,8 @@ async function onSuggest(clarification = null) {
       })
     );
     if (token !== suggestToken) return; // a newer request superseded this one
-    debug.note("suggest", `suggest ${Math.round(performance.now() - t0)} ms${data.fallback ? " (fallback)" : ""}`);
+    debug.note("suggest", `suggest ${Math.round(performance.now() - t0)} ms${data.fallback ? " (fallback)" : ""}` +
+      (data.understanding ? ` · understood: ${data.understanding}` : ""));
     console.log(
       `[suggest] ${Math.round(performance.now() - t0)} ms (llm ${data.ms} ms)` +
         (data.fallback ? " FALLBACK" : "")

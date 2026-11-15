@@ -83,7 +83,9 @@ Open **http://localhost:8000** in Chrome. Restart the server after editing `.env
 | `OPENAI_API_KEY` | Sentence suggestions |
 | `LLM_MODEL` | Default `gpt-5.4-mini` |
 | `OPENAI_BASE_URL` | Default `https://api.openai.com/v1` |
-| `LLM_REASONING_EFFORT` | Optional, default `none` (fastest) |
+| `LLM_REASONING_EFFORT` | Optional. Reply row after the partner speaks. Default `none` (fastest) |
+| `LLM_COMPOSE_REASONING_EFFORT` | Optional. Building sentences from tiles. Default `low` (the model thinks before it writes) |
+| `LLM_COMPOSE_MODEL` | Optional. A different model for building sentences. Default: `LLM_MODEL` |
 
 `.env` is git-ignored. Never commit keys.
 
