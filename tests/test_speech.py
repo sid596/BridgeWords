@@ -230,3 +230,19 @@ def test_deleting_the_voice_goes_back_to_the_standard_voice(client, cloning, tts
     client.post("/api/speak", json={"text": "Haan", "lang": "hi"})
     assert len(tts.calls) == 1
     assert client.post("/api/voice/use", json={"enabled": True}).status_code == 400
+
+
+def test_every_label_the_page_uses_exists_in_ui_json():
+    """data-i18n="..." and t("...") hold lookup names, not labels: change the wording in data/ui.json."""
+    import json
+    import re
+    with open("data/ui.json", encoding="utf-8") as f:
+        ui = json.load(f)
+    with open("static/index.html", encoding="utf-8") as f:
+        html = f.read()
+    with open("static/app.js", encoding="utf-8") as f:
+        js = f.read()
+    keys = set(re.findall(r'data-i18n(?:-placeholder)?="([^"]+)"', html)) | set(re.findall(r'\bt\("([^"]+)"\)', js))
+    for lang in ("en", "hinglish", "hi", "kn", "mr"):
+        missing = sorted(k for k in keys if k not in ui[lang])
+        assert not missing, f"{lang}: no text for {missing}. Add them to data/ui.json (don't rename the key in the HTML)."

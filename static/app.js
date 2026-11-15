@@ -1177,8 +1177,8 @@ function renderPartnerPicker() {
     return o;
   };
   $("partner-picker").replaceChildren(
-    option("", t("Same as Me")),
-    option("auto", t("Auto Detect")),
+    option("", t("same_as_me")),
+    option("auto", t("auto_detect")),
     ...state.partnerLanguages.map((l) => option(l.id, l.name))
   );
 }
