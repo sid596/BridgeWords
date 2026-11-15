@@ -1575,6 +1575,33 @@ async function demoPartnerSays(text) {
   return data;
 }
 
+// ---------- Video captions (?captions=1): a subtitle band for recording the demo video ----------
+// Right arrow shows the next caption, left arrow the previous one. Ignored while typing in a box.
+const CAPTIONS = [
+  "He understands every word, but can't answer out loud.",
+  "It listens to the other person: Gnani Prisma",
+  "Two taps, a full sentence, in his chosen voice: Gnani Timbre",
+  "Unclear? It asks instead of guessing.",
+  "He reads Hinglish. The chemist hears Kannada.",
+  "Nothing is spoken without his tap. BridgeWords · #GnaniAI",
+];
+
+function initCaptions() {
+  if (!new URLSearchParams(location.search).has("captions")) return;
+  const band = el("div", "caption-band");
+  band.hidden = true;
+  document.body.prepend(band);
+  let i = -1;
+  document.addEventListener("keydown", (e) => {
+    if (e.target.closest("input, textarea, select")) return;
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    e.preventDefault();
+    i = Math.max(-1, Math.min(CAPTIONS.length - 1, i + (e.key === "ArrowRight" ? 1 : -1)));
+    band.hidden = i < 0;
+    band.textContent = i < 0 ? "" : CAPTIONS[i];
+  });
+}
+
 function initDemo() {
   if (!new URLSearchParams(location.search).has("demo")) return;
   $("demo-panel").hidden = false;
@@ -1629,6 +1656,7 @@ function init() {
   wireSegments();
   scan.init();
   initDemo();
+  initCaptions();
   voice.init();
   $("lang-picker").addEventListener("change", (e) => {
     loadSymbols(e.target.value).catch((err) => toast(err.message));

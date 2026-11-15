@@ -658,3 +658,15 @@ button { cursor: pointer; touch-action: manipulation; }
 #voice-record.recording { background: var(--urgent); color: #fff; border-color: var(--urgent); }
 .consent { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; }
 .consent input { width: 24px; height: 24px; flex: none; margin-top: 1px; }
+
+/* Demo-video captions (?captions=1): a subtitle band above the app, so it never covers a control. */
+.caption-band {
+  flex: none;
+  background: #111;
+  color: #fff;
+  font-size: clamp(20px, 2.6vw, 36px);
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  padding: 14px 16px;
+}

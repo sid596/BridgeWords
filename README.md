@@ -63,6 +63,8 @@ The normal link (no `?demo=1`) is the full app: tap **Start Listening**, talk, a
 
 `/?demo=1` is the **same app** with one extra strip on top. Listening, Prisma and Timbre all still work. The strip lets you type what the partner said (or tap a scripted line from both scenarios), plus **Load sample week**, which loads a fictional week of conversation so the board-learning ideas (🪂 Parachute, 🩼 Crutch, 🍝 Pasta) appear on cue. It's useful for rehearsing, recording the video, and **judges trying it without a second person, in a noisy room, or with the mic blocked**.
 
+Add `&captions=1` (e.g. `/?demo=1&captions=1`) for a subtitle band when recording the demo video: **→** shows the next caption, **←** the previous one. The captions are in `CAPTIONS` at the top of the captions section in `static/app.js`.
+
 ## Run it
 
 Needs **Python 3.15** (macOS: `brew install python@3.15`; Windows: python.org installer).
